@@ -1,0 +1,36 @@
+/* Page layout and buttons. The board itself is drawn on the canvas by js/renderer.js. */
+
+body {
+  font-family: system-ui, sans-serif;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1rem;
+  line-height: 1.5;
+}
+
+header a {
+  text-decoration: none;
+}
+
+h1 {
+  margin: 0.25rem 0 1rem;
+}
+
+#status {
+  min-height: 1.5em;
+  margin: 0 0 0.75rem;
+}
+
+/* The canvas shrinks to fit narrow screens and keeps its 13 x 9 shape. */
+.board-wrapper {
+  width: 100%;
+}
+
+#board {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 13 / 9;
+  background: #f4f1e8;
+  border: 1px solid #999;
+}

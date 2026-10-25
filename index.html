@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Games</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      max-width: 600px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      line-height: 1.5;
-    }
-    ul { padding-left: 1.2rem; }
-  </style>
+  <title>Pent 'Em In</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>Games</h1>
-  <p>A small collection of simple games.</p>
-  <ul>
-    <li><a href="pent_em_in/">Pent 'Em In</a></li>
-  </ul>
+  <header>
+    <a href="../">&larr; All games</a>
+    <h1>Pent 'Em In</h1>
+  </header>
+
+  <main>
+    <p id="status">Loading...</p>
+
+    <div class="board-wrapper">
+      <canvas id="board" width="1300" height="900"></canvas>
+    </div>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

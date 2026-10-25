@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pent 'Em In: Tests</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
+    .pass { color: #1a7f37; }
+    .fail { color: #cf222e; }
+    li { margin: 0.25rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Pent 'Em In: Tests</h1>
+  <p id="summary">Running...</p>
+  <ul id="results"></ul>
+
+  <script type="module">
+    // A tiny test helper. Add tests below as each phase is built.
+    const results = document.getElementById("results");
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      const item = document.createElement("li");
+      try {
+        fn();
+        item.className = "pass";
+        item.textContent = "PASS: " + name;
+        passed++;
+      } catch (error) {
+        item.className = "fail";
+        item.textContent = "FAIL: " + name + " (" + error.message + ")";
+        failed++;
+      }
+      results.appendChild(item);
+    }
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message || "assertion failed");
+    }
+
+    // --- Tests go here (first real tests arrive in Phase 2) ---
+    test("the test page itself works", () => assert(1 + 1 === 2));
+
+    document.getElementById("summary").textContent =
+      passed + " passed, " + failed + " failed";
+  </script>
+</body>
+</html>
