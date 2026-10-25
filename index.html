@@ -1,78 +1,25 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>My Canvas</title>
-<style>
-  body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-  canvas { width: 100%; height: auto; border: 1px solid #888; border-radius: 8px; background: #fafafa; touch-action: none; cursor: crosshair; }
-  button { font: inherit; padding: .4rem .9rem; margin-right: .5rem; cursor: pointer; }
-  nav { margin-bottom: 1rem; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Games</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+    ul { padding-left: 1.2rem; }
+  </style>
 </head>
 <body>
-  <nav><a href="page2.html">Go to page 2 &rarr;</a></nav>
-  <h1>My Canvas</h1>
-  <p>Click the canvas to add a dot. Dots are saved in your browser, so they'll still be here after you leave and come back.</p>
-
-  <canvas id="c" width="600" height="400"></canvas>
-  <p>
-    <button id="clear">Clear dots</button>
-    <span id="info"></span>
-  </p>
-
-<script>
-  // Prefix keys so they don't collide with other sites under the same github.io domain
-  const KEY = 'mycanvas:dots';
-  const VISITS = 'mycanvas:visits';
-
-  function load(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch (e) { return fallback; }
-  }
-  function save(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage blocked */ }
-  }
-
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-  const info = document.getElementById('info');
-
-  let dots = load(KEY, []);
-  let visits = load(VISITS, 0) + 1;
-  save(VISITS, visits);
-
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const d of dots) {
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, 10, 0, Math.PI * 2);
-      ctx.fillStyle = `hsl(${d.hue}, 70%, 55%)`;
-      ctx.fill();
-    }
-    info.textContent = `${dots.length} dot(s) · visit #${visits}`;
-  }
-
-  canvas.addEventListener('pointerdown', (e) => {
-    // Convert screen coordinates to canvas coordinates (canvas is scaled by CSS)
-    const r = canvas.getBoundingClientRect();
-    const x = (e.clientX - r.left) * (canvas.width / r.width);
-    const y = (e.clientY - r.top) * (canvas.height / r.height);
-    dots.push({ x, y, hue: Math.floor(Math.random() * 360) });
-    save(KEY, dots);
-    draw();
-  });
-
-  document.getElementById('clear').addEventListener('click', () => {
-    dots = [];
-    save(KEY, dots);
-    draw();
-  });
-
-  draw();
-</script>
+  <h1>Games</h1>
+  <p>A small collection of simple games.</p>
+  <ul>
+    <li><a href="pent_em_in/">Pent 'Em In</a></li>
+  </ul>
 </body>
 </html>
