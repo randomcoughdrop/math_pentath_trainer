@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page 2</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  canvas { width: 100%; height: auto; border: 1px solid #888; border-radius: 8px; background: #fafafa; }
+  nav { margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+  <nav><a href="index.html">&larr; Back to the main canvas</a></nav>
+  <h1>Page 2</h1>
+  <p>This page reads the same saved data as the main page. Add dots there, then come here to see them.</p>
+
+  <canvas id="c" width="600" height="400"></canvas>
+  <p id="info"></p>
+
+<script>
+  const KEY = 'mycanvas:dots';
+  const VISITS = 'mycanvas:visits';
+
+  function load(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  }
+
+  const dots = load(KEY, []);
+  const visits = load(VISITS, 0);
+  const ctx = document.getElementById('c').getContext('2d');
+
+  for (const d of dots) {
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 10, 0, Math.PI * 2);
+    ctx.fillStyle = `hsl(${d.hue}, 70%, 55%)`;
+    ctx.fill();
+  }
+
+  document.getElementById('info').textContent =
+    `${dots.length} dot(s) saved · main page visited ${visits} time(s)`;
+</script>
+</body>
+</html>
