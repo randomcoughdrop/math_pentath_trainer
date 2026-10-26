@@ -55,7 +55,7 @@ canvas {
 }
 
 #board {
-  aspect-ratio: 13 / 9;
+  aspect-ratio: 13.5 / 9.5; /* 13 x 9 squares plus a margin of 0.25 square on each side */
 }
 
 /* Two piece trays side by side, stacking on narrow screens. */

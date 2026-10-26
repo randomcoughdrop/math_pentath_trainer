@@ -563,10 +563,11 @@
     });
 
     test("pointing at the board and the tray", () => {
-      assert(JSON.stringify(boardCellFromPoint(5, 5, 1300)) === JSON.stringify({ row: 0, col: 0 }));
-      assert(JSON.stringify(boardCellFromPoint(1299, 899, 1300)) === JSON.stringify({ row: 8, col: 12 }));
-      assert(boardCellFromPoint(-1, 5, 1300) === null);
-      assert(boardCellFromPoint(5, 901, 1300) === null);
+      // A 1350-pixel-wide canvas has 100-pixel squares and a 25-pixel margin.
+      assert(JSON.stringify(boardCellFromPoint(30, 30, 1350)) === JSON.stringify({ row: 0, col: 0 }));
+      assert(JSON.stringify(boardCellFromPoint(1324, 924, 1350)) === JSON.stringify({ row: 8, col: 12 }));
+      assert(boardCellFromPoint(20, 30, 1350) === null, "left margin");
+      assert(boardCellFromPoint(30, 926, 1350) === null, "bottom margin");
       assert(trayIndexFromPoint(5, 5, 400) === 0);
       assert(trayIndexFromPoint(399, 5, 400) === 3);
       assert(trayIndexFromPoint(5, 299, 400) === 8);

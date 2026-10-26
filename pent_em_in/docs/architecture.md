@@ -133,6 +133,7 @@ Flipping over a side and then back over the opposite side returns the piece to w
 **UI (the page):**
 - The piece being held, the cursor square, and short notices are not game state. They live in a small `view` object owned by `main.js`: `{ held, hover, notice, announce }`.
 - `input.js` has pure helpers (`newHeldPiece`, `rotateHeld`, `flipHeld`, `cellsAt`, `computePreview`) that are unit-tested, and `setupInput`, which attaches pointer, button, and key listeners and changes `view`. A successful placement goes through `onPlace` to `applyMove`.
+- The board canvas has a small margin (`BOARD_MARGIN`, 0.25 square) so outlines on the edge aren't clipped; `boardCellFromPoint` accounts for it.
 - `renderer.js` draws the ghost and highlights the held shape in the tray; it also exports `boardCellFromPoint` and `trayIndexFromPoint`.
 - `ui.js` builds the status sentence and enables or disables the buttons.
 

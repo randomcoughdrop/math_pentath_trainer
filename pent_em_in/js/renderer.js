@@ -12,6 +12,9 @@ const TRAY_COLUMNS = 4;
 const TRAY_ROWS = 3;
 const TRAY_BOX = 6;
 
+// Empty space around the board, in cells, so outlines on the edge aren't clipped.
+const BOARD_MARGIN = 0.25;
+
 // How a shape already placed on the board looks in the tray.
 const USED_LOOK = { fill: "#dcd8cc", edge: "#b8b3a5" };
 
@@ -25,12 +28,27 @@ const BLOCKED_LOOK = { fill: "#6b665a", edge: "#2d2a24" };
 // Draw the board: grid, stars, markings, pieces, the ghost preview, and chips.
 // `preview` is optional: { cells, ok } for the piece being held over the board.
 export function render(canvas, state, preview = null) {
-  const layout = fitCanvas(canvas, COLS, ROWS);
+  const layout = fitCanvas(canvas, COLS + 2 * BOARD_MARGIN, ROWS + 2 * BOARD_MARGIN);
   if (!layout) return; // the canvas is hidden or has no size yet
 
   const ctx = canvas.getContext("2d");
   ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
-  drawBoard(ctx, state, layout, preview);
+
+  // Fill the margin, then draw the board inside it. The offset is a whole
+  // number of device pixels so grid lines stay crisp.
+  ctx.fillStyle = BOARD_COLORS.background;
+  ctx.fillRect(0, 0, layout.width, layout.height);
+  const offset = Math.round(BOARD_MARGIN * layout.cell * layout.dpr);
+  ctx.translate(offset / layout.dpr, offset / layout.dpr);
+
+  const boardLayout = {
+    ...layout,
+    width: COLS * layout.cell,
+    height: ROWS * layout.cell,
+    pixelWidth: Math.round(COLS * layout.cell * layout.dpr),
+    pixelHeight: Math.round(ROWS * layout.cell * layout.dpr),
+  };
+  drawBoard(ctx, state, boardLayout, preview);
 }
 
 // Draw one player's piece tray. Shapes that player has already placed are
@@ -49,13 +67,16 @@ export function renderTray(canvas, state, player, held = null) {
 // Pointing at things (pure math, used by input.js)
 // ---------------------------------------------------------------------------
 
-// Which board square is at pixel (x, y) on a board drawn `width` pixels wide?
-// Returns { row, col }, or null if the point is outside the board.
+// Which board square is at pixel (x, y) on a board canvas drawn `width` pixels
+// wide (margin included)? Returns { row, col }, or null if the point is
+// outside the board.
 export function boardCellFromPoint(x, y, width) {
-  const cell = width / COLS;
-  const col = Math.floor(x / cell);
-  const row = Math.floor(y / cell);
-  if (x < 0 || y < 0 || col >= COLS || row >= ROWS) return null;
+  const cell = width / (COLS + 2 * BOARD_MARGIN);
+  const boardX = x - BOARD_MARGIN * cell;
+  const boardY = y - BOARD_MARGIN * cell;
+  const col = Math.floor(boardX / cell);
+  const row = Math.floor(boardY / cell);
+  if (boardX < 0 || boardY < 0 || col >= COLS || row >= ROWS) return null;
   return { row, col };
 }
 
