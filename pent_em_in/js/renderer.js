@@ -1,6 +1,8 @@
 // Draws the game state to the canvas. It only reads the state, never changes it.
 
-import { COLS, ROWS, STARS, CHIP_STARTS, COLOR_SCHEMES, BOARD_COLORS } from "./constants.js";
+import {
+  COLS, ROWS, STARS, CHIP_STARTS, START_MARKERS, COLOR_SCHEMES, BOARD_COLORS,
+} from "./constants.js";
 
 // Public entry point: size the canvas, then draw everything.
 export function render(canvas, state) {
@@ -37,6 +39,7 @@ export function drawBoard(ctx, state, layout) {
   drawStartSquares(ctx, layout, colors);
   drawGrid(ctx, layout);
   drawStars(ctx, layout);
+  drawStartMarkers(ctx, layout, colors);
   drawChips(ctx, state, layout, colors);
 }
 
@@ -45,8 +48,7 @@ function drawBackground(ctx, { width, height }) {
   ctx.fillRect(0, 0, width, height);
 }
 
-// A light tint under each boot-and-hat square, so they stay marked after
-// the chips move away.
+// A light tint under each starting square, in its owner's color.
 function drawStartSquares(ctx, { cell }, colors) {
   ctx.globalAlpha = 0.18;
   for (const start of CHIP_STARTS) {
@@ -109,24 +111,33 @@ function drawStarShape(ctx, centerX, centerY, outerRadius, innerRadius) {
   ctx.stroke();
 }
 
+// The boot or hat printed on each starting square. It is part of the board,
+// so it stays visible after the chip on it moves away.
+function drawStartMarkers(ctx, { cell }, colors) {
+  const size = cell * 0.92;
+  ctx.globalAlpha = 0.7;
+  for (const start of CHIP_STARTS) {
+    const left = start.col * cell + (cell - size) / 2;
+    const top = start.row * cell + (cell - size) / 2;
+    drawIcon(ctx, START_MARKERS[start.owner], left, top, size, colors[start.owner].edge);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Chips are plain solid discs in the owner's color.
 function drawChips(ctx, state, { cell }, colors) {
   for (const chip of state.chips) {
     const look = colors[chip.owner];
     const centerX = (chip.col + 0.5) * cell;
     const centerY = (chip.row + 0.5) * cell;
 
-    // The round chip itself.
     ctx.fillStyle = look.fill;
     ctx.strokeStyle = look.edge;
     ctx.lineWidth = Math.max(1.5, cell * 0.05);
     ctx.beginPath();
-    ctx.arc(centerX, centerY, cell * 0.4, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, cell * 0.22, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-
-    // The boot or hat drawn on top of it.
-    const iconSize = cell * 0.7;
-    drawIcon(ctx, chip.kind, centerX - iconSize / 2, centerY - iconSize / 2, iconSize, look.icon);
   }
 }
 

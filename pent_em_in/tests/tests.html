@@ -17,7 +17,7 @@
 
   <script type="module">
     import {
-      COLS, ROWS, STARS, CHIP_STARTS, COLOR_SCHEMES,
+      COLS, ROWS, STARS, CHIP_STARTS, START_MARKERS, COLOR_SCHEMES,
       BAND_RULES, PRESET_LEVELS, bandForLevel,
     } from "../js/constants.js";
     import { createInitialState } from "../js/state.js";
@@ -73,11 +73,15 @@
       }
     });
 
-    test("each player has one boot and one hat", () => {
+    test("each player starts with two chips", () => {
       for (const owner of [1, 2]) {
-        const kinds = CHIP_STARTS.filter((c) => c.owner === owner).map((c) => c.kind).sort();
-        assert(kinds.join() === "boot,hat", "player " + owner + " has " + kinds.join());
+        assert(CHIP_STARTS.filter((c) => c.owner === owner).length === 2, "player " + owner);
       }
+    });
+
+    test("one player's squares show boots and the other's show hats", () => {
+      const markers = [START_MARKERS[1], START_MARKERS[2]].sort();
+      assert(markers.join() === "boot,hat", "markers are " + markers.join());
     });
 
     test("chips start on the board, on separate squares, and not on stars", () => {
@@ -95,7 +99,7 @@
       for (const name of ["red-blue", "yellow-green"]) {
         for (const owner of [1, 2]) {
           const look = COLOR_SCHEMES[name][owner];
-          assert(look && look.fill && look.edge && look.icon, name + " player " + owner + " is incomplete");
+          assert(look && look.fill && look.edge, name + " player " + owner + " is incomplete");
         }
       }
     });
