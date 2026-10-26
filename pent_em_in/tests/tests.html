@@ -21,6 +21,14 @@
       BAND_RULES, PRESET_LEVELS, bandForLevel,
     } from "../js/constants.js";
     import { createInitialState } from "../js/state.js";
+    import { analyzePlacement, analyzeMove, isAllowed } from "../js/analyze.js";
+    import { getLegalPlacements, hasLegalPlacement } from "../js/moves.js";
+    import { applyMove } from "../js/game.js";
+    import {
+      newHeldPiece, rotateHeld, flipHeld, cellsAt, computePreview,
+    } from "../js/input.js";
+    import { boardCellFromPoint, trayIndexFromPoint } from "../js/renderer.js";
+    import { statusMessage } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
     import {
       SIDES, slideCells, rotateAboutVertex, flipOverSide, boundingBox,
@@ -364,6 +372,214 @@
       assert(state.unusedShapes[1].length === 12 && state.unusedShapes[2].length === 12);
       state.unusedShapes[1].pop();
       assert(state.unusedShapes[2].length === 12, "the two players share a list");
+    });
+
+
+    // ---------------- Phase 3: placement ----------------
+
+    const stateWith = (pieces, extra = {}) => ({ ...createInitialState(), pieces, ...extra });
+    const row0 = (c) => [[0, c], [0, c + 1], [0, c + 2], [0, c + 3], [0, c + 4]];
+
+    test("a plain placement is legal", () => {
+      const a = analyzePlacement(createInitialState(), 1, row0(0));
+      assert(a.possible && a.legal && a.violations.length === 0 && a.message === "");
+    });
+
+    test("placements off the board are impossible", () => {
+      const a = analyzePlacement(createInitialState(), 1, row0(10));
+      assert(!a.possible && !a.legal);
+    });
+
+    test("placements over a chip or a piece are impossible", () => {
+      const state = stateWith([{ id: 0, owner: 2, shape: "I", cells: row0(0) }]);
+      assert(!analyzePlacement(state, 1, [[3, 6], [3, 7], [3, 8], [3, 9], [3, 10]]).possible, "chip");
+      assert(!analyzePlacement(state, 1, [[0, 4], [1, 4], [2, 4], [3, 4], [3, 3]]).possible, "piece");
+    });
+
+    test("covering a star is possible but breaks a rule", () => {
+      const a = analyzePlacement(createInitialState(), 1, [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]]);
+      assert(a.possible && !a.legal && a.violations.includes("placement-star"));
+    });
+
+    test("edge contact with an opponent piece breaks a rule; corners and own pieces do not", () => {
+      const state = stateWith([{ id: 0, owner: 2, shape: "I", cells: row0(0) }]);
+      const edge = analyzePlacement(state, 1, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]]);
+      assert(edge.violations.includes("placement-contact"), "edge");
+      const corner = analyzePlacement(state, 1, [[1, 5], [1, 6], [1, 7], [1, 8], [1, 9]]);
+      assert(corner.legal, "corner contact only");
+      const own = analyzePlacement(state, 2, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]]);
+      assert(own.legal, "own piece");
+    });
+
+    test("star plus contact reports both", () => {
+      const state = stateWith([{ id: 0, owner: 2, shape: "I", cells: [[2, 3], [2, 4], [2, 5], [2, 6], [2, 7]] }]);
+      const a = analyzePlacement(state, 1, [[2, 1], [2, 2], [3, 2], [4, 2], [3, 3]]);
+      assert(a.violations.includes("placement-star") && a.violations.includes("placement-contact"));
+    });
+
+    test("isAllowed refuses rule-breaking moves for now, and always refuses impossible ones", () => {
+      const state = createInitialState();
+      assert(isAllowed(state, analyzePlacement(state, 1, row0(0))));
+      assert(!isAllowed(state, analyzePlacement(state, 1, [[2, 0], [2, 1], [2, 2], [2, 3], [2, 4]])));
+      assert(!isAllowed(state, analyzePlacement(state, 1, row0(10))));
+    });
+
+    test("analyzeMove checks the current player", () => {
+      const state = createInitialState({ startingPlayer: 2 });
+      const a = analyzeMove(state, { type: "place", shape: "I", cells: row0(0) });
+      assert(a.legal);
+    });
+
+    test("X can be placed in the expected number of ways on the empty board", () => {
+      // X is 3x3, so it has 7 x 11 positions; subtract any that cover a chip or a star.
+      const state = createInitialState();
+      const found = getLegalPlacements(state, 1).filter((p) => p.shape === "X").length;
+      let expected = 0;
+      for (let top = 0; top + 3 <= ROWS; top++) {
+        for (let left = 0; left + 3 <= COLS; left++) {
+          const cells = [[top, left + 1], [top + 1, left], [top + 1, left + 1], [top + 1, left + 2], [top + 2, left + 1]];
+          const blocked = cells.some(([r, c]) =>
+            CHIP_STARTS.some((s) => s.row === r && s.col === c) || STARS.some((s) => s.row === r && s.col === c));
+          if (!blocked) expected++;
+        }
+      }
+      assert(found === expected, found + " vs " + expected);
+    });
+
+    test("hasLegalPlacement is true at the start", () => {
+      assert(hasLegalPlacement(createInitialState(), 1));
+    });
+
+    test("applyMove places a piece, alternates turns, and does not change the old state", () => {
+      const state = createInitialState({ startingPlayer: 2 });
+      const before = JSON.stringify(state);
+      const result = applyMove(state, { type: "place", shape: "I", cells: row0(0) });
+      assert(result.ok);
+      assert(JSON.stringify(state) === before, "old state changed");
+      assert(result.state.currentPlayer === 1);
+      assert(result.state.pieces.length === 1 && result.state.pieces[0].owner === 2);
+      assert(!result.state.unusedShapes[2].includes("I") && result.state.unusedShapes[1].includes("I"));
+      assert(result.state.placedCount[2] === 1);
+    });
+
+    test("applyMove rejects bad placements and reused shapes", () => {
+      const state = createInitialState();
+      assert(!applyMove(state, { type: "place", shape: "I", cells: row0(10) }).ok, "off board");
+      assert(!applyMove(state, { type: "place", shape: "L", cells: row0(0) }).ok, "wrong shape");
+      const next = applyMove(state, { type: "place", shape: "I", cells: row0(0) }).state;
+      const again = applyMove(applyMove(next, { type: "place", shape: "I", cells: [[8, 0], [8, 1], [8, 2], [8, 3], [8, 4]] }).state,
+        { type: "place", shape: "I", cells: [[6, 0], [6, 1], [6, 2], [6, 3], [6, 4]] });
+      assert(!again.ok, "reused shape");
+    });
+
+    test("a player with no legal placement loses", () => {
+      const chips = new Set(CHIP_STARTS.map((s) => s.row + "," + s.col));
+      const fill = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (chips.has(r + "," + c)) continue;
+          if (r === 0 && c < 5) continue;
+          fill.push([r, c]);
+        }
+      }
+      const state = stateWith([{ id: 0, owner: 1, shape: "I", cells: fill }], {
+        unusedShapes: { 1: ["I"], 2: ["X"] },
+      });
+      const result = applyMove(state, { type: "place", shape: "I", cells: row0(0) });
+      assert(result.ok);
+      assert(result.state.phase === "gameover" && result.state.winner === 1 && result.state.winReason === "placement");
+    });
+
+    test("ten placements end the placement phase, with the starting player moving first", () => {
+      let state = createInitialState({ startingPlayer: 2 });
+      const shapes = SHAPE_NAMES;
+      // Lay each player's pieces in their own rows of the board, away from stars and each other.
+      const spots = [
+        [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]],
+      ];
+      // Use the generator: take the first legal placement of the first unused shape each time.
+      for (let i = 0; i < 10; i++) {
+        const options = getLegalPlacements(state, state.currentPlayer);
+        assert(options.length > 0, "no options at move " + i);
+        const pick = options[0];
+        const result = applyMove(state, { type: "place", shape: pick.shape, cells: pick.cells });
+        assert(result.ok, "move " + i + " failed");
+        state = result.state;
+        if (state.phase === "gameover") return; // a forfeit is a valid ending too
+      }
+      assert(state.phase === "movement" && state.currentPlayer === 2);
+      assert(!applyMove(state, { type: "place", shape: "I", cells: row0(0) }).ok, "placing during movement");
+    });
+
+    test("rotating the held piece four times returns it; cw then ccw cancels", () => {
+      const start = newHeldPiece("F");
+      let held = start;
+      for (let i = 0; i < 4; i++) held = rotateHeld(held, true);
+      assert(shapeKey(held.cells) === shapeKey(start.cells) && JSON.stringify(normalize(held.cells)) === JSON.stringify(start.cells));
+      const back = rotateHeld(rotateHeld(start, true), false);
+      assert(JSON.stringify(back.cells) === JSON.stringify(start.cells));
+    });
+
+    test("flipping twice returns the held piece", () => {
+      const start = newHeldPiece("N");
+      assert(JSON.stringify(flipHeld(flipHeld(start)).cells) === JSON.stringify(start.cells));
+    });
+
+    test("rotate and flip together reach every orientation", () => {
+      for (const name of SHAPE_NAMES) {
+        const seen = new Set();
+        let held = newHeldPiece(name);
+        for (let f = 0; f < 2; f++) {
+          for (let r = 0; r < 4; r++) {
+            seen.add(shapeKey(held.cells));
+            held = rotateHeld(held, true);
+          }
+          held = flipHeld(held);
+        }
+        assert(seen.size === orientations(getShapeCells(name)).length, name);
+      }
+    });
+
+    test("the held piece is anchored at its middle", () => {
+      const held = newHeldPiece("I");
+      const cells = cellsAt(held, 3, 6);
+      const key = JSON.stringify(cells.map(([r, c]) => [r, c]).sort());
+      const horizontal = held.cells.every(([r]) => r === held.cells[0][0]);
+      if (horizontal) assert(cells.every(([r]) => r === 3) && Math.min(...cells.map(([, c]) => c)) === 4, key);
+      else assert(cells.every(([, c]) => c === 6) && Math.min(...cells.map(([r]) => r)) === 1, key);
+    });
+
+    test("computePreview reports ok, blocked, and nothing", () => {
+      const state = createInitialState();
+      const held = newHeldPiece("I");
+      assert(computePreview(state, null, { row: 0, col: 0 }) === null);
+      assert(computePreview(state, held, null) === null);
+      const off = computePreview(state, held, { row: 0, col: 0 });
+      assert(off && off.cells.length === 5);
+      const fine = computePreview(state, held, { row: 0, col: 6 });
+      assert(fine.ok === true, "should be ok");
+      const star = computePreview(state, newHeldPiece("I"), { row: 2, col: 2 });
+      assert(star.ok === false && star.message !== "");
+    });
+
+    test("pointing at the board and the tray", () => {
+      assert(JSON.stringify(boardCellFromPoint(5, 5, 1300)) === JSON.stringify({ row: 0, col: 0 }));
+      assert(JSON.stringify(boardCellFromPoint(1299, 899, 1300)) === JSON.stringify({ row: 8, col: 12 }));
+      assert(boardCellFromPoint(-1, 5, 1300) === null);
+      assert(boardCellFromPoint(5, 901, 1300) === null);
+      assert(trayIndexFromPoint(5, 5, 400) === 0);
+      assert(trayIndexFromPoint(399, 5, 400) === 3);
+      assert(trayIndexFromPoint(5, 299, 400) === 8);
+      assert(trayIndexFromPoint(5, 301, 400) === null);
+    });
+
+    test("the status line names the player and reacts to the preview", () => {
+      const state = createInitialState({ startingPlayer: 1 });
+      const none = { held: null, hover: null, notice: "", announce: "" };
+      assert(statusMessage(state, none, null).includes("Player 1 (Red)"));
+      assert(statusMessage(state, none, null).includes("piece 1 of 5"));
+      const view = { ...none, held: newHeldPiece("I") };
+      assert(statusMessage(state, view, { ok: false, message: "Nope." }).includes("Nope."));
     });
 
     document.getElementById("summary").textContent =

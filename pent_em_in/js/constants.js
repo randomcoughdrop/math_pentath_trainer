@@ -3,6 +3,9 @@
 export const COLS = 13;
 export const ROWS = 9;
 
+// Each player places exactly this many pentominoes.
+export const PIECES_PER_PLAYER = 5;
+
 // The rules number rows and columns from 1. The code counts from 0,
 // so "row 3, column 3" in the rules is { row: 2, col: 2 } here.
 
@@ -45,6 +48,7 @@ export const BOARD_COLORS = {
   grid: "#8a8577",
   star: "#e0a800",
   starEdge: "#7a5b00",
+  highlight: "#fff1a8", // behind the shape you are holding in your tray
 };
 
 // What each difficulty band changes. Later phases read these flags.

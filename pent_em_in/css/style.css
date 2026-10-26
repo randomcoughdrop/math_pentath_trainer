@@ -22,8 +22,22 @@ h2 {
 }
 
 #status {
-  min-height: 1.5em;
-  margin: 0 0 0.75rem;
+  min-height: 3em; /* room for two lines so the board doesn't jump around */
+  margin: 0 0 0.5rem;
+}
+
+/* Rotate, flip, place, and cancel. Big enough to tap. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.controls button {
+  min-height: 44px;
+  padding: 0 0.9rem;
+  font-size: 1rem;
 }
 
 /* The canvases shrink to fit narrow screens and keep their shapes. */
@@ -37,6 +51,7 @@ canvas {
   height: auto;
   background: #f4f1e8;
   border: 1px solid #999;
+  touch-action: manipulation; /* taps work, and dragging still scrolls the page */
 }
 
 #board {
@@ -57,4 +72,16 @@ canvas {
 
 .tray canvas {
   aspect-ratio: 4 / 3; /* 4 columns x 3 rows of shapes */
+  opacity: 0.65;
+}
+
+/* Whose turn it is to pick a piece. */
+.tray.active h2 {
+  text-decoration: underline;
+}
+
+.tray.active canvas {
+  opacity: 1;
+  border-color: #333;
+  box-shadow: 0 0 0 3px #ffd54a;
 }

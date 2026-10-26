@@ -292,7 +292,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   - `boundingBox(cells)` and `normalize(cells)`: for flips, comparing shapes, and the tray display
 - `renderer.js`: `drawPieces` draws each piece's cells in its owner's color.
 - Piece trays below the board (one per player) showing the 12 shapes, with used ones greyed out.
-- A temporary `js/demo.js` (page address `?demo=pieces`) places sample pieces so the drawing can be checked by eye; it is removed in Phase 3.
+- A temporary `js/demo.js` (page address `?demo=pieces`) placed sample pieces so the drawing could be checked by eye; it was removed in Phase 3.
 - First tests in `tests/tests.html`:
   - every shape has exactly 5 cells
   - four quarter-turns return the original cells
@@ -313,7 +313,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   - **Impossible:** a cell is off the board, or on a chip or another piece.
   - **Violations:** `placement-star` (a cell on a star) and `placement-contact` (an edge shared with an opponent's piece).
 - For now the game plays Easy rules only (any violation is refused with a clear message). Medium and Hard behavior arrives in Phase 6.
-- `input.js`: click a tray piece to select it, rotate and flip it freely with `R` and `F` (or on-screen buttons) *before* placing, hover shows a green/red ghost preview, click to place. Placed pieces are final.
+- `input.js`: click a tray piece to select it, rotate and flip it freely with `R` and `F` (or on-screen buttons) *before* placing, hover shows a see-through ghost (the player's color when the spot is allowed, grey with a slash through each square when it is not), click to place. On touch screens, tap a square to position the ghost and tap it again (or press Place) to confirm. Rotate, flip, place, and cancel buttons are always available. Placed pieces are final.
 - `game.js`: `applyMove` for placements, alternating turns (starting player first), stop at 5 pieces each.
 - **Forfeit check:** if none of a player's unused shapes has any rule-legal placement anywhere, that player loses (`winReason: "placement"`). This applies on every level.
 - `ui.js`: status line ("Player 2: place a piece, 3 left").

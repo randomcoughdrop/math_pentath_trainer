@@ -93,3 +93,15 @@ Three incorrect challenges is an automatic loss.
 - **Flip sides:** the four sides of the piece's bounding rectangle, so every piece has exactly four flips.
 - **Consecutive chip moves:** a player's chip move followed by a chip move on that player's very next turn.
 - **Stars:** a star square is a rule, not a physical obstacle. Landing on or passing over one is rule-breaking, not impossible.
+
+## Phase 3 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Ghost style | Player's color when the spot is allowed; grey with a slash through each square when it is not. Green/red was avoided because red and green are player colors, and the slash works for color-blind players. |
+| Touch placement | Two steps: tap to position the ghost, tap the same square (or Place) to confirm. |
+| Held piece anchor | The piece is held by its middle (`top = row - floor((h-1)/2)`), so it stays under the cursor as it rotates. |
+| Forfeit check | A player with no legal placement loses, on every difficulty level. |
+| Pieces touching own pieces | Allowed; only edge contact with an opponent's piece is a violation. Corner contact is always fine. |
+| Who moves first in the movement phase | The starting player, because turns simply alternate through the ten placements. |
+| Starting player | Random draw (announced in the status line); `?first=1` or `?first=2` overrides it. |

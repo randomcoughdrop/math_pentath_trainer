@@ -15,28 +15,58 @@ const TRAY_BOX = 6;
 // How a shape already placed on the board looks in the tray.
 const USED_LOOK = { fill: "#dcd8cc", edge: "#b8b3a5" };
 
+// How a ghost looks when the piece can't go where the cursor is.
+const BLOCKED_LOOK = { fill: "#6b665a", edge: "#2d2a24" };
+
 // ---------------------------------------------------------------------------
 // Public entry points
 // ---------------------------------------------------------------------------
 
-// Draw the board: grid, stars, markings, pieces, and chips.
-export function render(canvas, state) {
+// Draw the board: grid, stars, markings, pieces, the ghost preview, and chips.
+// `preview` is optional: { cells, ok } for the piece being held over the board.
+export function render(canvas, state, preview = null) {
   const layout = fitCanvas(canvas, COLS, ROWS);
   if (!layout) return; // the canvas is hidden or has no size yet
 
   const ctx = canvas.getContext("2d");
   ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
-  drawBoard(ctx, state, layout);
+  drawBoard(ctx, state, layout, preview);
 }
 
-// Draw one player's piece tray. Shapes that player has already placed are greyed out.
-export function renderTray(canvas, state, player) {
+// Draw one player's piece tray. Shapes that player has already placed are
+// greyed out. `held` is optional: { shape, cells } for the piece they are
+// holding, which is highlighted and drawn in its current orientation.
+export function renderTray(canvas, state, player, held = null) {
   const layout = fitCanvas(canvas, TRAY_COLUMNS * TRAY_BOX, TRAY_ROWS * TRAY_BOX);
   if (!layout) return;
 
   const ctx = canvas.getContext("2d");
   ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
-  drawTray(ctx, state, player, layout);
+  drawTray(ctx, state, player, held, layout);
+}
+
+// ---------------------------------------------------------------------------
+// Pointing at things (pure math, used by input.js)
+// ---------------------------------------------------------------------------
+
+// Which board square is at pixel (x, y) on a board drawn `width` pixels wide?
+// Returns { row, col }, or null if the point is outside the board.
+export function boardCellFromPoint(x, y, width) {
+  const cell = width / COLS;
+  const col = Math.floor(x / cell);
+  const row = Math.floor(y / cell);
+  if (x < 0 || y < 0 || col >= COLS || row >= ROWS) return null;
+  return { row, col };
+}
+
+// Which tray box (0 to 11, in SHAPE_NAMES order) is at pixel (x, y) on a tray
+// drawn `width` pixels wide? Returns null if the point is outside the tray.
+export function trayIndexFromPoint(x, y, width) {
+  const box = width / TRAY_COLUMNS;
+  const col = Math.floor(x / box);
+  const row = Math.floor(y / box);
+  if (x < 0 || y < 0 || col >= TRAY_COLUMNS || row >= TRAY_ROWS) return null;
+  return row * TRAY_COLUMNS + col;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +124,7 @@ function drawGridLines(ctx, layout, columns, rows, step) {
 // The board
 // ---------------------------------------------------------------------------
 
-export function drawBoard(ctx, state, layout) {
+export function drawBoard(ctx, state, layout, preview = null) {
   const colors = COLOR_SCHEMES[state.settings.colorScheme];
 
   drawBackground(ctx, layout);
@@ -103,6 +133,7 @@ export function drawBoard(ctx, state, layout) {
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
   drawPieces(ctx, state, layout, colors);
+  drawGhost(ctx, state, layout, colors, preview);
   drawChips(ctx, state, layout, colors);
 }
 
@@ -168,6 +199,33 @@ function drawPieces(ctx, state, { cell }, colors) {
   }
 }
 
+// The see-through preview of the piece being held. If it can be placed there it
+// looks like the piece in its owner's color; if not, it is grey with a slash
+// through every square (a shape cue, so it never depends on telling colors apart).
+function drawGhost(ctx, state, { cell }, colors, preview) {
+  if (!preview) return;
+
+  if (preview.ok) {
+    ctx.globalAlpha = 0.6;
+    drawCells(ctx, preview.cells, 0, 0, cell, colors[state.currentPlayer]);
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  ctx.globalAlpha = 0.55;
+  drawCells(ctx, preview.cells, 0, 0, cell, BLOCKED_LOOK);
+  ctx.globalAlpha = 0.8;
+  ctx.strokeStyle = BLOCKED_LOOK.edge;
+  ctx.lineWidth = Math.max(2, cell * 0.06);
+  ctx.beginPath();
+  for (const [row, col] of preview.cells) {
+    ctx.moveTo(col * cell + cell * 0.2, row * cell + cell * 0.2);
+    ctx.lineTo(col * cell + cell * 0.8, row * cell + cell * 0.8);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 // Chips are plain solid discs in the owner's color.
 function drawChips(ctx, state, { cell }, colors) {
   for (const chip of state.chips) {
@@ -220,7 +278,7 @@ function drawIcon(ctx, kind, left, top, size, color) {
 }
 
 // ---------------------------------------------------------------------------
-// Pieces (used by both the board and the tray)
+// Pieces (used by the board, the ghost, and the tray)
 // ---------------------------------------------------------------------------
 
 // Draw one pentomino. Cell [row, col] is drawn at (left + col * unit, top + row * unit).
@@ -262,21 +320,33 @@ function drawCells(ctx, cells, left, top, unit, look) {
 // The piece tray
 // ---------------------------------------------------------------------------
 
-function drawTray(ctx, state, player, layout) {
+function drawTray(ctx, state, player, held, layout) {
   const { width, height, cell } = layout;
   const look = COLOR_SCHEMES[state.settings.colorScheme][player];
   const unused = state.unusedShapes[player];
+  const boxSize = TRAY_BOX * cell;
 
   ctx.fillStyle = BOARD_COLORS.background;
   ctx.fillRect(0, 0, width, height);
+
+  // Highlight the box of the piece being held.
+  SHAPE_NAMES.forEach((name, index) => {
+    if (!held || held.shape !== name) return;
+    ctx.fillStyle = BOARD_COLORS.highlight;
+    ctx.fillRect((index % TRAY_COLUMNS) * boxSize, Math.floor(index / TRAY_COLUMNS) * boxSize, boxSize, boxSize);
+  });
+
   drawGridLines(ctx, layout, TRAY_COLUMNS, TRAY_ROWS, TRAY_BOX);
 
   SHAPE_NAMES.forEach((name, index) => {
-    const boxLeft = (index % TRAY_COLUMNS) * TRAY_BOX * cell;
-    const boxTop = Math.floor(index / TRAY_COLUMNS) * TRAY_BOX * cell;
+    const boxLeft = (index % TRAY_COLUMNS) * boxSize;
+    const boxTop = Math.floor(index / TRAY_COLUMNS) * boxSize;
+
+    // The held piece is shown in whatever orientation it currently has.
+    const isHeld = held && held.shape === name;
+    const cells = isHeld ? held.cells : getShapeCells(name);
 
     // Center the shape in its box.
-    const cells = getShapeCells(name);
     const box = boundingBox(cells);
     const shapeWidth = box.maxCol - box.minCol + 1;
     const shapeHeight = box.maxRow - box.minRow + 1;

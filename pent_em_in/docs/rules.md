@@ -155,4 +155,11 @@ An **inappropriate challenge (IA)** is one made at the wrong time, or about a pr
 
 ---
 
+## Implementation notes: placement
+
+- Placement is checked by `analyzeMove`: *impossible* (off the board, on a chip or piece) is always refused; *violations* (on a star, sharing an edge with an opponent's piece) are refused on every level until challenges arrive in Phase 6.
+- A player who cannot legally place any unused shape loses immediately.
+
+---
+
 *© Pentathlon Institute, Inc. These rule highlights are for tournament use only.*

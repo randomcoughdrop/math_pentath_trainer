@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 2 (the board, the 12 pieces, and the piece trays are drawn). The game itself is not playable yet. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 3 (two players on one screen can place their five pieces each). Moving pieces arrives in Phase 4. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 
@@ -20,7 +20,20 @@ On GitHub Pages it works as-is, with no build step.
 
 To see the second color set (yellow and green instead of red and blue), add `?colors=yellow-green` to the address.
 
-To see some sample pieces on the board (and greyed-out shapes in the trays), add `?demo=pieces`. Combine them with `&`, for example `?colors=yellow-green&demo=pieces`. This demo is temporary and goes away in Phase 3.
+To choose who goes first instead of the random draw, add `?first=1` or `?first=2`. Combine options with `&`, for example `?colors=yellow-green&first=2`.
+
+## Controls (placement phase)
+
+| Action | Mouse and keyboard | Touch |
+|---|---|---|
+| Pick a piece | Click it in your tray (click again to put it back) | Tap it |
+| Rotate | `R` (clockwise), `Shift+R` (counterclockwise) | Rotate buttons |
+| Flip | `F` | Flip button |
+| Preview | Move over the board; a see-through ghost follows | Tap a square |
+| Place | Click the square | Tap the same square again, or press Place |
+| Cancel | `Esc` | Cancel button |
+
+The ghost shows your color where the piece can go. It turns grey with a slash through each square where it can't (off the board, over a chip or piece, on a star, or touching an opponent's piece along an edge).
 
 To run the tests, open `tests/tests.html` the same way (for example `http://localhost:8000/pent_em_in/tests/tests.html`).
 

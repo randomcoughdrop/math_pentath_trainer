@@ -28,7 +28,6 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/renderer.js` | Draws the state to the canvas |
 | `js/input.js` | Mouse, touch, and keyboard to game actions |
 | `js/ui.js` | Status text, buttons, menus |
-| `js/demo.js` | Temporary sample pieces for checking the drawing (removed in Phase 3) |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
 ## Coordinates
@@ -121,10 +120,23 @@ Flipping over a side and then back over the opposite side returns the piece to w
 - `renderTray(canvas, state, player)` draws a player's tray: the 12 shapes in a 4 × 3 grid, each centered in its own box with its letter in the corner. Shapes the player no longer has in `state.unusedShapes` are greyed out.
 - Both use one shared function to draw a piece, so a piece looks the same on the board and in the tray.
 - The page has one tray under the board for each player.
+- (A temporary `?demo=pieces` page existed in Phase 2 to check the drawing by eye; it was removed in Phase 3.)
 
-### Temporary demo (`demo.js`)
+## Phase 3: Placement
 
-Adding `?demo=pieces` to the page address places six sample pieces on the board (including a rotated L and a flipped N) and greys out their shapes in the trays. It exists only so the drawing code can be checked by eye, and it is removed in Phase 3.
+**Logic (no drawing, no page):**
+- `rules.js`: small checks (on the board? a star? touching an opponent piece along an edge?).
+- `analyze.js`: `analyzeMove` reports `{ possible, violations, legal, message }`. *Possible* means on the board and not overlapping a chip or piece; *violations* are rule breaks (`placement-star`, `placement-contact`). `isAllowed` decides what the current difficulty permits; until Phase 6 every level refuses violations.
+- `moves.js`: lists every legal placement for a player (unused shapes × orientations × positions).
+- `game.js`: `applyMove(state, move)` returns `{ ok: true, state }` with a new state or `{ ok: false, message }`. It never edits the state it is given. After each placement it passes the turn. When both players have placed 5 pieces the phase becomes `"movement"` (the starting player moves first); if the next player has no legal placement, the phase becomes `"gameover"` and the other player wins (`winReason: "placement"`).
+
+**UI (the page):**
+- The piece being held, the cursor square, and short notices are not game state. They live in a small `view` object owned by `main.js`: `{ held, hover, notice, announce }`.
+- `input.js` has pure helpers (`newHeldPiece`, `rotateHeld`, `flipHeld`, `cellsAt`, `computePreview`) that are unit-tested, and `setupInput`, which attaches pointer, button, and key listeners and changes `view`. A successful placement goes through `onPlace` to `applyMove`.
+- `renderer.js` draws the ghost and highlights the held shape in the tray; it also exports `boardCellFromPoint` and `trayIndexFromPoint`.
+- `ui.js` builds the status sentence and enables or disables the buttons.
+
+Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to place) → `main.js` `draw()` → renderer and status.
 
 ## To Be Written
 
