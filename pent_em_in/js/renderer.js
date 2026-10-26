@@ -3,10 +3,25 @@
 import {
   COLS, ROWS, STARS, CHIP_STARTS, START_MARKERS, COLOR_SCHEMES, BOARD_COLORS,
 } from "./constants.js";
+import { SHAPE_NAMES, getShapeCells } from "./pieces.js";
+import { boundingBox } from "./transforms.js";
 
-// Public entry point: size the canvas, then draw everything.
+// The piece tray shows all 12 shapes in a grid; each shape sits in its own
+// square box, measured in board-cell units.
+const TRAY_COLUMNS = 4;
+const TRAY_ROWS = 3;
+const TRAY_BOX = 6;
+
+// How a shape already placed on the board looks in the tray.
+const USED_LOOK = { fill: "#dcd8cc", edge: "#b8b3a5" };
+
+// ---------------------------------------------------------------------------
+// Public entry points
+// ---------------------------------------------------------------------------
+
+// Draw the board: grid, stars, markings, pieces, and chips.
 export function render(canvas, state) {
-  const layout = fitCanvas(canvas);
+  const layout = fitCanvas(canvas, COLS, ROWS);
   if (!layout) return; // the canvas is hidden or has no size yet
 
   const ctx = canvas.getContext("2d");
@@ -14,14 +29,30 @@ export function render(canvas, state) {
   drawBoard(ctx, state, layout);
 }
 
+// Draw one player's piece tray. Shapes that player has already placed are greyed out.
+export function renderTray(canvas, state, player) {
+  const layout = fitCanvas(canvas, TRAY_COLUMNS * TRAY_BOX, TRAY_ROWS * TRAY_BOX);
+  if (!layout) return;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+  drawTray(ctx, state, player, layout);
+}
+
+// ---------------------------------------------------------------------------
+// Canvas sizing
+// ---------------------------------------------------------------------------
+
 // Match the canvas's pixel size to how big it appears on screen, so lines
-// stay sharp on high-resolution screens. Returns the numbers drawing needs.
-function fitCanvas(canvas) {
+// stay sharp on high-resolution screens. unitsWide and unitsTall say how many
+// squares the drawing is. Returns the numbers drawing needs; "cell" is the
+// size of one square in screen pixels.
+function fitCanvas(canvas, unitsWide, unitsTall) {
   const width = canvas.clientWidth;
   if (width === 0) return null;
 
   const dpr = window.devicePixelRatio || 1;
-  const height = (width * ROWS) / COLS;
+  const height = (width * unitsTall) / unitsWide;
   const pixelWidth = Math.round(width * dpr);
   const pixelHeight = Math.round(height * dpr);
 
@@ -29,17 +60,49 @@ function fitCanvas(canvas) {
   if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
   if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 
-  return { width, height, dpr, pixelWidth, pixelHeight, cell: width / COLS };
+  return { width, height, dpr, pixelWidth, pixelHeight, cell: width / unitsWide };
 }
+
+// Move a line to the middle of a device pixel so a thin line isn't blurry.
+// The last line is pulled back inside the canvas so it isn't clipped.
+function snapToPixel(position, dpr, totalPixels) {
+  const pixel = Math.min(Math.round(position * dpr), totalPixels - 1);
+  return (pixel + 0.5) / dpr;
+}
+
+// Draw a grid of thin lines: `columns` x `rows` squares of size layout.cell * step.
+function drawGridLines(ctx, layout, columns, rows, step) {
+  const { width, height, dpr, pixelWidth, pixelHeight, cell } = layout;
+
+  ctx.strokeStyle = BOARD_COLORS.grid;
+  ctx.lineWidth = 1 / dpr; // exactly one device pixel, so lines stay crisp
+  ctx.beginPath();
+  for (let col = 0; col <= columns; col++) {
+    const x = snapToPixel(col * step * cell, dpr, pixelWidth);
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+  }
+  for (let row = 0; row <= rows; row++) {
+    const y = snapToPixel(row * step * cell, dpr, pixelHeight);
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+  }
+  ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
+// The board
+// ---------------------------------------------------------------------------
 
 export function drawBoard(ctx, state, layout) {
   const colors = COLOR_SCHEMES[state.settings.colorScheme];
 
   drawBackground(ctx, layout);
   drawStartSquares(ctx, layout, colors);
-  drawGrid(ctx, layout);
+  drawGridLines(ctx, layout, COLS, ROWS, 1);
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
+  drawPieces(ctx, state, layout, colors);
   drawChips(ctx, state, layout, colors);
 }
 
@@ -56,32 +119,6 @@ function drawStartSquares(ctx, { cell }, colors) {
     ctx.fillRect(start.col * cell, start.row * cell, cell, cell);
   }
   ctx.globalAlpha = 1;
-}
-
-function drawGrid(ctx, layout) {
-  const { width, height, dpr, pixelWidth, pixelHeight, cell } = layout;
-
-  ctx.strokeStyle = BOARD_COLORS.grid;
-  ctx.lineWidth = 1 / dpr; // exactly one device pixel, so lines stay crisp
-  ctx.beginPath();
-  for (let col = 0; col <= COLS; col++) {
-    const x = snapToPixel(col * cell, dpr, pixelWidth);
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-  }
-  for (let row = 0; row <= ROWS; row++) {
-    const y = snapToPixel(row * cell, dpr, pixelHeight);
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-  }
-  ctx.stroke();
-}
-
-// Move a line to the middle of a device pixel so a thin line isn't blurry.
-// The last line is pulled back inside the canvas so it isn't clipped.
-function snapToPixel(position, dpr, totalPixels) {
-  const pixel = Math.min(Math.round(position * dpr), totalPixels - 1);
-  return (pixel + 0.5) / dpr;
 }
 
 function drawStars(ctx, { cell }) {
@@ -122,6 +159,13 @@ function drawStartMarkers(ctx, { cell }, colors) {
     drawIcon(ctx, START_MARKERS[start.owner], left, top, size, colors[start.owner].edge);
   }
   ctx.globalAlpha = 1;
+}
+
+// Pieces placed on the board. Their cells are in board coordinates.
+function drawPieces(ctx, state, { cell }, colors) {
+  for (const piece of state.pieces) {
+    drawCells(ctx, piece.cells, 0, 0, cell, colors[piece.owner]);
+  }
 }
 
 // Chips are plain solid discs in the owner's color.
@@ -173,4 +217,78 @@ function drawIcon(ctx, kind, left, top, size, color) {
   }
 
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Pieces (used by both the board and the tray)
+// ---------------------------------------------------------------------------
+
+// Draw one pentomino. Cell [row, col] is drawn at (left + col * unit, top + row * unit).
+// "look" supplies the fill and edge colors.
+function drawCells(ctx, cells, left, top, unit, look) {
+  const owned = new Set(cells.map(([row, col]) => row + "," + col));
+
+  // Solid squares.
+  ctx.fillStyle = look.fill;
+  for (const [row, col] of cells) {
+    ctx.fillRect(left + col * unit, top + row * unit, unit, unit);
+  }
+
+  // Faint lines between the squares of the piece, so you can count them.
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.lineWidth = 1;
+  for (const [row, col] of cells) {
+    ctx.strokeRect(left + col * unit, top + row * unit, unit, unit);
+  }
+
+  // A heavier outline, only along edges that touch empty space.
+  ctx.strokeStyle = look.edge;
+  ctx.lineWidth = Math.max(2, unit * 0.08);
+  ctx.lineCap = "square";
+  ctx.beginPath();
+  for (const [row, col] of cells) {
+    const x = left + col * unit;
+    const y = top + row * unit;
+    if (!owned.has(row - 1 + "," + col)) { ctx.moveTo(x, y); ctx.lineTo(x + unit, y); }
+    if (!owned.has(row + 1 + "," + col)) { ctx.moveTo(x, y + unit); ctx.lineTo(x + unit, y + unit); }
+    if (!owned.has(row + "," + (col - 1))) { ctx.moveTo(x, y); ctx.lineTo(x, y + unit); }
+    if (!owned.has(row + "," + (col + 1))) { ctx.moveTo(x + unit, y); ctx.lineTo(x + unit, y + unit); }
+  }
+  ctx.stroke();
+  ctx.lineCap = "butt";
+}
+
+// ---------------------------------------------------------------------------
+// The piece tray
+// ---------------------------------------------------------------------------
+
+function drawTray(ctx, state, player, layout) {
+  const { width, height, cell } = layout;
+  const look = COLOR_SCHEMES[state.settings.colorScheme][player];
+  const unused = state.unusedShapes[player];
+
+  ctx.fillStyle = BOARD_COLORS.background;
+  ctx.fillRect(0, 0, width, height);
+  drawGridLines(ctx, layout, TRAY_COLUMNS, TRAY_ROWS, TRAY_BOX);
+
+  SHAPE_NAMES.forEach((name, index) => {
+    const boxLeft = (index % TRAY_COLUMNS) * TRAY_BOX * cell;
+    const boxTop = Math.floor(index / TRAY_COLUMNS) * TRAY_BOX * cell;
+
+    // Center the shape in its box.
+    const cells = getShapeCells(name);
+    const box = boundingBox(cells);
+    const shapeWidth = box.maxCol - box.minCol + 1;
+    const shapeHeight = box.maxRow - box.minRow + 1;
+    const left = boxLeft + ((TRAY_BOX - shapeWidth) / 2 - box.minCol) * cell;
+    const top = boxTop + ((TRAY_BOX - shapeHeight) / 2 - box.minRow) * cell;
+
+    drawCells(ctx, cells, left, top, cell, unused.includes(name) ? look : USED_LOOK);
+
+    // The shape's letter, small, in the bottom-left corner of its box.
+    ctx.fillStyle = BOARD_COLORS.grid;
+    ctx.font = Math.round(cell * 0.9) + "px system-ui, sans-serif";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(name, boxLeft + cell * 0.35, boxTop + (TRAY_BOX - 0.35) * cell);
+  });
 }

@@ -291,12 +291,13 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   - `externalCorners(cells)`: every vertex touched by exactly one of the piece's cells
   - `boundingBox(cells)` and `normalize(cells)`: for flips, comparing shapes, and the tray display
 - `renderer.js`: `drawPieces` draws each piece's cells in its owner's color.
-- Piece tray along the side of the board showing the 12 shapes, with used ones greyed out.
+- Piece trays below the board (one per player) showing the 12 shapes, with used ones greyed out.
+- A temporary `js/demo.js` (page address `?demo=pieces`) places sample pieces so the drawing can be checked by eye; it is removed in Phase 3.
 - First tests in `tests/tests.html`:
   - every shape has exactly 5 cells
   - four quarter-turns return the original cells
   - flipping over the top and then over the new bottom returns the original
-  - `externalCorners` returns the expected count for easy cases (I has 4, X has 12, L has 6)
+  - `externalCorners` returns the expected count for easy cases (I has 4, L has 5, U has 6, X has 8), and every shape has exactly four more outward corners than inner corners
   - flips ignore notches (the U flips over its four bounding sides only)
 
 **Done when:** You can see all 12 pieces in the tray and the tests pass.

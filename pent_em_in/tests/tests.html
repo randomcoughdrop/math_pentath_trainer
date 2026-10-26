@@ -21,6 +21,11 @@
       BAND_RULES, PRESET_LEVELS, bandForLevel,
     } from "../js/constants.js";
     import { createInitialState } from "../js/state.js";
+    import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
+    import {
+      SIDES, slideCells, rotateAboutVertex, flipOverSide, boundingBox,
+      vertexCellCount, externalCorners, normalize, shapeKey, orientations,
+    } from "../js/transforms.js";
 
     // A tiny test helper. Add tests below as each phase is built.
     const results = document.getElementById("results");
@@ -130,6 +135,235 @@
       const state = createInitialState();
       state.chips[0].row = 99;
       assert(CHIP_STARTS[0].row !== 99, "changing the state changed the constants");
+    });
+
+    // --- Phase 2: shapes and transforms ---
+
+    // The exact squares of a piece, as text (position matters, order doesn't).
+    const exactKey = (cells) => cells.map(([r, c]) => r + "," + c).sort().join(";");
+    const sameSquares = (a, b) => exactKey(a) === exactKey(b);
+
+    // Are all the squares joined edge to edge?
+    function isConnected(cells) {
+      const owned = new Set(cells.map(([r, c]) => r + "," + c));
+      const seen = new Set([cells[0][0] + "," + cells[0][1]]);
+      const queue = [cells[0]];
+      while (queue.length > 0) {
+        const [r, c] = queue.pop();
+        for (const [nr, nc] of [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]]) {
+          const key = nr + "," + nc;
+          if (owned.has(key) && !seen.has(key)) { seen.add(key); queue.push([nr, nc]); }
+        }
+      }
+      return seen.size === cells.length;
+    }
+
+    const OPPOSITE = { top: "bottom", bottom: "top", left: "right", right: "left" };
+
+    test("there are 12 shapes, each with exactly 5 distinct squares joined edge to edge", () => {
+      assert(SHAPE_NAMES.length === 12, "found " + SHAPE_NAMES.length + " shapes");
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        assert(cells.length === 5, name + " has " + cells.length + " squares");
+        assert(new Set(cells.map(([r, c]) => r + "," + c)).size === 5, name + " repeats a square");
+        assert(isConnected(cells), name + " is not connected");
+      }
+    });
+
+    test("the 12 shapes are all different, even allowing turning and flipping", () => {
+      const canonical = SHAPE_NAMES.map((name) =>
+        orientations(getShapeCells(name)).map((o) => shapeKey(o)).sort()[0]);
+      assert(new Set(canonical).size === 12, "two shapes are the same pentomino");
+    });
+
+    test("each shape has the right number of distinct orientations (63 in total)", () => {
+      const expected = { F: 8, I: 2, L: 8, N: 8, P: 8, T: 4, U: 4, V: 4, W: 4, X: 1, Y: 8, Z: 4 };
+      let total = 0;
+      for (const name of SHAPE_NAMES) {
+        const count = orientations(getShapeCells(name)).length;
+        assert(count === expected[name], name + " has " + count + ", expected " + expected[name]);
+        total += count;
+      }
+      assert(total === 63, "total is " + total);
+    });
+
+    test("getShapeCells returns a copy that is safe to change", () => {
+      const cells = getShapeCells("F");
+      cells[0][0] = 99;
+      assert(SHAPES.F[0][0] !== 99, "changing the copy changed the shape");
+    });
+
+    test("slideCells moves every square and leaves the original alone", () => {
+      const original = getShapeCells("L");
+      const moved = slideCells(original, 2, -1);
+      assert(sameSquares(original, getShapeCells("L")), "the original changed");
+      assert(sameSquares(moved, original.map(([r, c]) => [r + 2, c - 1])), "wrong squares");
+    });
+
+    test("normalize puts the top-left at [0, 0] and lists squares in reading order", () => {
+      const result = normalize([[5, 7], [4, 8], [4, 7]]);
+      assert(JSON.stringify(result) === "[[0,0],[0,1],[1,0]]", JSON.stringify(result));
+    });
+
+    test("rotating one square a quarter turn clockwise around its top-left corner", () => {
+      const one = [[0, 0]];
+      assert(sameSquares(rotateAboutVertex(one, [0, 0], 1), [[0, -1]]), "1 turn");
+      assert(sameSquares(rotateAboutVertex(one, [0, 0], 2), [[-1, -1]]), "2 turns");
+      assert(sameSquares(rotateAboutVertex(one, [0, 0], 3), [[-1, 0]]), "3 turns");
+      assert(sameSquares(rotateAboutVertex(one, [0, 0], 4), [[0, 0]]), "4 turns");
+    });
+
+    test("four quarter turns bring every shape back, around any corner", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        for (const pivot of [[0, 0], [1, 1], [2, 3], [-2, 5]]) {
+          let turned = cells;
+          for (let i = 0; i < 4; i++) turned = rotateAboutVertex(turned, pivot, 1);
+          assert(sameSquares(turned, cells), name + " around " + pivot);
+        }
+      }
+    });
+
+    test("turns add up: 1 then 3 and 2 then 2 both return to the start", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        const pivot = [1, 2];
+        const oneThenThree = rotateAboutVertex(rotateAboutVertex(cells, pivot, 1), pivot, 3);
+        const twoThenTwo = rotateAboutVertex(rotateAboutVertex(cells, pivot, 2), pivot, 2);
+        assert(sameSquares(oneThenThree, cells) && sameSquares(twoThenTwo, cells), name);
+      }
+    });
+
+    test("a rotated shape is still one of the shape's orientations", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        const keys = orientations(cells).map((o) => shapeKey(o));
+        for (const pivot of [[0, 0], [2, 1]]) {
+          for (let turns = 1; turns <= 3; turns++) {
+            const key = shapeKey(rotateAboutVertex(cells, pivot, turns));
+            assert(keys.includes(key), name + " turned " + turns + " is not a known orientation");
+          }
+        }
+      }
+    });
+
+    test("rotation does not change the list it is given", () => {
+      const cells = getShapeCells("T");
+      rotateAboutVertex(cells, [1, 1], 1);
+      assert(sameSquares(cells, getShapeCells("T")));
+    });
+
+    test("flipping over each side lands the piece just beyond that side", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        const box = boundingBox(cells);
+        const top = boundingBox(flipOverSide(cells, "top"));
+        const bottom = boundingBox(flipOverSide(cells, "bottom"));
+        const left = boundingBox(flipOverSide(cells, "left"));
+        const right = boundingBox(flipOverSide(cells, "right"));
+        assert(top.maxRow === box.minRow - 1 && top.minCol === box.minCol, name + " top");
+        assert(bottom.minRow === box.maxRow + 1 && bottom.minCol === box.minCol, name + " bottom");
+        assert(left.maxCol === box.minCol - 1 && left.minRow === box.minRow, name + " left");
+        assert(right.minCol === box.maxCol + 1 && right.minRow === box.minRow, name + " right");
+      }
+    });
+
+    test("flipping over a side and then back over the opposite side returns to the start", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        for (const side of SIDES) {
+          const there = flipOverSide(cells, side);
+          const back = flipOverSide(there, OPPOSITE[side]);
+          assert(sameSquares(back, cells), name + " over " + side);
+        }
+      }
+    });
+
+    test("a flip is a mirror image, so it reverses handedness", () => {
+      // The F is not symmetrical: flipping it gives a different orientation than rotating it.
+      const cells = getShapeCells("F");
+      const rotated = [1, 2, 3].map((t) => shapeKey(rotateAboutVertex(cells, [0, 0], t)));
+      assert(!rotated.includes(shapeKey(flipOverSide(cells, "top"))), "F flip matched a rotation");
+    });
+
+    test("flips only use the four sides of the bounding rectangle, not notches (U piece)", () => {
+      const u = getShapeCells("U"); // X.X / XXX, opening at the top
+      const flippedTop = flipOverSide(u, "top");
+      // Mirrored across its top edge, the U lands above itself and opens downward.
+      assert(sameSquares(flippedTop, [[-1, 0], [-1, 2], [-2, 0], [-2, 1], [-2, 2]]),
+        JSON.stringify(flippedTop));
+      assert(shapeKey(flippedTop) !== shapeKey(u), "the flipped U should point the other way");
+    });
+
+    test("flips do not change the list they are given", () => {
+      const cells = getShapeCells("N");
+      flipOverSide(cells, "right");
+      assert(sameSquares(cells, getShapeCells("N")));
+    });
+
+    test("an unknown flip side is rejected", () => {
+      let rejected = false;
+      try { flipOverSide(getShapeCells("I"), "middle"); } catch (e) { rejected = true; }
+      assert(rejected, "no error for an unknown side");
+    });
+
+    test("vertexCellCount counts the squares around a corner", () => {
+      const x = getShapeCells("X"); // the plus sign; its center square is [1, 1]
+      assert(vertexCellCount(x, [1, 1]) === 3, "inner corner of the plus");
+      assert(vertexCellCount(x, [0, 1]) === 1, "outer corner of the top arm");
+      assert(vertexCellCount(x, [5, 5]) === 0, "far away");
+    });
+
+    test("external corners: I has 4, L has 5, X has 8, U has 6", () => {
+      const counts = { I: 4, L: 5, X: 8, U: 6 };
+      for (const name of Object.keys(counts)) {
+        const found = externalCorners(getShapeCells(name)).length;
+        assert(found === counts[name], name + " has " + found + ", expected " + counts[name]);
+      }
+    });
+
+    test("every external corner touches exactly one square, and there are no diagonal-only corners", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        const owned = new Set(cells.map(([r, c]) => r + "," + c));
+        let convex = 0;
+        let concave = 0;
+        for (let r = -1; r <= 6; r++) {
+          for (let c = -1; c <= 6; c++) {
+            const count = vertexCellCount(cells, [r, c]);
+            if (count === 1) convex++;
+            if (count === 3) concave++;
+            if (count === 2) {
+              // Two squares at a corner must share an edge (side by side), never just touch diagonally.
+              const topLeft = owned.has((r - 1) + "," + (c - 1));
+              const bottomRight = owned.has(r + "," + c);
+              const topRight = owned.has((r - 1) + "," + c);
+              const bottomLeft = owned.has(r + "," + (c - 1));
+              assert(!(topLeft && bottomRight) && !(topRight && bottomLeft), name + " has a diagonal-only corner");
+            }
+          }
+        }
+        assert(externalCorners(cells).length === convex, name + " corner count mismatch");
+        // A closed rectilinear outline always has exactly 4 more convex corners than concave ones.
+        assert(convex === concave + 4, name + " has " + convex + " convex and " + concave + " concave corners");
+      }
+    });
+
+    test("external corners are real corners of the piece (each lies on a square's corner)", () => {
+      for (const name of SHAPE_NAMES) {
+        const cells = getShapeCells(name);
+        for (const [vr, vc] of externalCorners(cells)) {
+          const touches = cells.some(([r, c]) => (vr === r || vr === r + 1) && (vc === c || vc === c + 1));
+          assert(touches, name + " has a corner away from the piece");
+        }
+      }
+    });
+
+    test("the starting state gives each player all 12 shapes, in separate lists", () => {
+      const state = createInitialState();
+      assert(state.unusedShapes[1].length === 12 && state.unusedShapes[2].length === 12);
+      state.unusedShapes[1].pop();
+      assert(state.unusedShapes[2].length === 12, "the two players share a list");
     });
 
     document.getElementById("summary").textContent =

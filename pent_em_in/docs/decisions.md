@@ -24,6 +24,7 @@ Rules that the tournament summary (`rules.md`) left open, and what we chose. Add
 | CPU starting values | The `randomMoveRate` / `searchDepth` table below is the starting point and is tuned by playing. |
 | Boot and hat drawing | Chips are plain solid discs. The boot and hat are pictures printed on the board under the starting squares, and both of a player's squares show the same picture. Player 1's squares show boots and Player 2's show hats. The rules don't say which player gets which, so this is cosmetic (`START_MARKERS` in `constants.js`). |
 | Coordinates | The rules count rows and columns from 1; the code counts from 0. |
+| Rotation direction | The code rotates clockwise in quarter turns (1, 2, or 3). Since any multiple of 90° is allowed in one turn, direction doesn't change which positions a player can reach. |
 
 ## Two Kinds of "Not Allowed"
 

@@ -1,6 +1,7 @@
 // Creates the game state. It is plain data, so it is easy to copy and test.
 
 import { CHIP_STARTS, PRESET_LEVELS } from "./constants.js";
+import { SHAPE_NAMES } from "./pieces.js";
 
 export function createInitialState(options = {}) {
   return {
@@ -13,6 +14,8 @@ export function createInitialState(options = {}) {
     },
     pieces: [],
     chips: CHIP_STARTS.map((chip, index) => ({ id: index, ...chip })),
+    // Each player starts with all 12 shapes available and chooses 5 of them.
+    unusedShapes: { 1: [...SHAPE_NAMES], 2: [...SHAPE_NAMES] },
     placedCount: { 1: 0, 2: 0 },
     repeat: { 1: { pieceId: null, count: 0 }, 2: { pieceId: null, count: 0 } },
     lastWasChipMove: { 1: false, 2: false },
@@ -22,6 +25,5 @@ export function createInitialState(options = {}) {
     moveLog: [],
     winner: null,
     winReason: null,
-    // Phase 3 adds: unusedShapes (each player's pool of 12 shapes)
   };
 }

@@ -1,4 +1,4 @@
-/* Page layout and buttons. The board itself is drawn on the canvas by js/renderer.js. */
+/* Page layout and buttons. The board and trays are drawn on canvases by js/renderer.js. */
 
 body {
   font-family: system-ui, sans-serif;
@@ -16,21 +16,45 @@ h1 {
   margin: 0.25rem 0 1rem;
 }
 
+h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}
+
 #status {
   min-height: 1.5em;
   margin: 0 0 0.75rem;
 }
 
-/* The canvas shrinks to fit narrow screens and keeps its 13 x 9 shape. */
+/* The canvases shrink to fit narrow screens and keep their shapes. */
 .board-wrapper {
   width: 100%;
 }
 
-#board {
+canvas {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 13 / 9;
   background: #f4f1e8;
   border: 1px solid #999;
+}
+
+#board {
+  aspect-ratio: 13 / 9;
+}
+
+/* Two piece trays side by side, stacking on narrow screens. */
+.trays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.tray {
+  flex: 1 1 320px;
+}
+
+.tray canvas {
+  aspect-ratio: 4 / 3; /* 4 columns x 3 rows of shapes */
 }

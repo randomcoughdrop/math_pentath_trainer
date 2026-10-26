@@ -28,6 +28,7 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/renderer.js` | Draws the state to the canvas |
 | `js/input.js` | Mouse, touch, and keyboard to game actions |
 | `js/ui.js` | Status text, buttons, menus |
+| `js/demo.js` | Temporary sample pieces for checking the drawing (removed in Phase 3) |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
 ## Coordinates
@@ -51,8 +52,81 @@ The renderer never changes the state.
 
 **Checking colors:** add `?colors=yellow-green` to the page address to see the second color scheme.
 
+## Phase 2: Shapes, Transforms, and the Piece Trays
+
+### Shapes (`pieces.js`)
+
+The 12 pentominoes are stored as lists of `[row, col]` cells, named by the letter they resemble: F, I, L, N, P, T, U, V, W, X, Y, Z. `getShapeCells(name)` returns a fresh copy that is safe to change.
+
+### Cells and vertices (`transforms.js`)
+
+A **cell** is `[row, col]`. A **vertex** is a grid corner between cells; vertex `[r, c]` is the top-left corner of cell `[r, c]`. Rotations pivot around vertices.
+
+```
+vertex [0,0] +--------+ vertex [0,1]
+             | cell   |
+             | [0,0]  |
+vertex [1,0] +--------+ vertex [1,1]
+```
+
+None of the transform functions change the list they are given; each returns a new one.
+
+| Function | What it does |
+|----------|--------------|
+| `slideCells(cells, dr, dc)` | Moves every cell by `dr` rows and `dc` columns |
+| `rotateAboutVertex(cells, pivot, quarterTurns)` | Rotates clockwise by 1, 2, or 3 quarter turns around a vertex |
+| `flipOverSide(cells, side)` | Flips over the `"top"`, `"bottom"`, `"left"`, or `"right"` side of the bounding rectangle |
+| `externalCorners(cells)` | Lists the vertices where a piece may pivot (see below) |
+| `vertexCellCount(cells, vertex)` | How many of the four cells around a vertex belong to the piece |
+| `boundingBox(cells)` | Smallest rectangle containing the piece |
+| `normalize(cells)` | Shifts a piece to the top-left and puts its cells in reading order |
+| `shapeKey(cells)` | A text key for a normalized piece, for comparing and de-duplicating |
+| `orientations(cells)` | Every distinct way to turn or flip a piece (8 for most; X has 1, I has 2) |
+
+Rotation is always clockwise in code. Since any multiple of 90° is allowed in one turn, direction doesn't change which positions a player can reach.
+
+### External corners
+
+An **external corner** is a vertex touched by exactly **one** cell of the piece: an outward-pointing corner of the outline. Inner (concave) corners touch three cells and are not external. Here the L pentomino has five external corners (`*`) and one inner corner (`o`):
+
+```
+*--*
+|  |
+|  |
+|  |
+|  o--*
+|     |
+*-----*
+```
+
+An outline always has exactly four more outward corners than inner corners, which the tests use as a check. Counts: I has 4, L has 5, U has 6, X has 8.
+
+### Flipping over a side
+
+A flip mirrors the piece across the line along one side of its bounding rectangle, like turning a page, so it lands just beyond that side. Dents in the outline are ignored. Flipping a U over its top:
+
+```
+XXX
+X.X     <- the flipped U lands above
+-------- the mirror line (the original's top edge)
+X.X
+XXX     <- the original U
+```
+
+Flipping over a side and then back over the opposite side returns the piece to where it started.
+
+### Drawing pieces and trays (`renderer.js`)
+
+- `render(canvas, state)` now also draws every piece in `state.pieces`: solid squares, faint lines between them, and a heavier outline along the piece's outer edge.
+- `renderTray(canvas, state, player)` draws a player's tray: the 12 shapes in a 4 × 3 grid, each centered in its own box with its letter in the corner. Shapes the player no longer has in `state.unusedShapes` are greyed out.
+- Both use one shared function to draw a piece, so a piece looks the same on the board and in the tray.
+- The page has one tray under the board for each player.
+
+### Temporary demo (`demo.js`)
+
+Adding `?demo=pieces` to the page address places six sample pieces on the board (including a rotated L and a flipped N) and greys out their shapes in the trays. It exists only so the drawing code can be checked by eye, and it is removed in Phase 3.
+
 ## To Be Written
 
-- Phase 2: shapes and transform helpers, with diagrams of "external corner" and "flip over a side"
 - Phase 4: movement rules
 - Phase 6: challenge procedure
