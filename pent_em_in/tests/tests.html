@@ -16,6 +16,12 @@
   <ul id="results"></ul>
 
   <script type="module">
+    import {
+      COLS, ROWS, STARS, CHIP_STARTS, COLOR_SCHEMES,
+      BAND_RULES, PRESET_LEVELS, bandForLevel,
+    } from "../js/constants.js";
+    import { createInitialState } from "../js/state.js";
+
     // A tiny test helper. Add tests below as each phase is built.
     const results = document.getElementById("results");
     let passed = 0;
@@ -40,8 +46,87 @@
       if (!condition) throw new Error(message || "assertion failed");
     }
 
-    // --- Tests go here (first real tests arrive in Phase 2) ---
-    test("the test page itself works", () => assert(1 + 1 === 2));
+    // Helper: does a list of { row, col } contain this square?
+    const hasSquare = (list, row, col) => list.some((s) => s.row === row && s.col === col);
+
+    // --- Phase 1: board constants and starting state ---
+    test("the board is 13 columns by 9 rows", () => {
+      assert(COLS === 13 && ROWS === 9);
+    });
+
+    test("there are exactly four stars, at columns 3 and 11 in rows 3 and 7 (rules numbering)", () => {
+      assert(STARS.length === 4);
+      for (const [row, col] of [[3, 3], [3, 11], [7, 3], [7, 11]]) {
+        assert(hasSquare(STARS, row - 1, col - 1), "missing star at row " + row + ", column " + col);
+      }
+    });
+
+    test("chip starting squares match the rules table", () => {
+      assert(CHIP_STARTS.length === 4);
+      const expected = [
+        [1, 4, 7], [1, 5, 6], // Player 1: row, column (rules numbering)
+        [2, 5, 8], [2, 6, 7], // Player 2
+      ];
+      for (const [owner, row, col] of expected) {
+        const found = CHIP_STARTS.some((c) => c.owner === owner && c.row === row - 1 && c.col === col - 1);
+        assert(found, "missing chip for player " + owner + " at row " + row + ", column " + col);
+      }
+    });
+
+    test("each player has one boot and one hat", () => {
+      for (const owner of [1, 2]) {
+        const kinds = CHIP_STARTS.filter((c) => c.owner === owner).map((c) => c.kind).sort();
+        assert(kinds.join() === "boot,hat", "player " + owner + " has " + kinds.join());
+      }
+    });
+
+    test("chips start on the board, on separate squares, and not on stars", () => {
+      const seen = new Set();
+      for (const chip of CHIP_STARTS) {
+        assert(chip.row >= 0 && chip.row < ROWS && chip.col >= 0 && chip.col < COLS, "off the board");
+        assert(!hasSquare(STARS, chip.row, chip.col), "chip on a star");
+        const key = chip.row + "," + chip.col;
+        assert(!seen.has(key), "two chips share a square");
+        seen.add(key);
+      }
+    });
+
+    test("both color schemes define both players", () => {
+      for (const name of ["red-blue", "yellow-green"]) {
+        for (const owner of [1, 2]) {
+          const look = COLOR_SCHEMES[name][owner];
+          assert(look && look.fill && look.edge && look.icon, name + " player " + owner + " is incomplete");
+        }
+      }
+    });
+
+    test("difficulty levels fall in the right bands", () => {
+      const cases = [[0, "easy"], [33, "easy"], [34, "medium"], [66, "medium"], [67, "hard"], [100, "hard"]];
+      for (const [level, band] of cases) {
+        assert(bandForLevel(level) === band, "level " + level + " should be " + band);
+      }
+    });
+
+    test("each preset level lands in its own band and every band has rules", () => {
+      for (const band of ["easy", "medium", "hard"]) {
+        assert(bandForLevel(PRESET_LEVELS[band]) === band, band + " preset is in the wrong band");
+        assert(BAND_RULES[band], band + " has no rules");
+      }
+    });
+
+    test("the starting state has four chips with unique ids and no pieces", () => {
+      const state = createInitialState();
+      assert(state.chips.length === 4);
+      assert(new Set(state.chips.map((c) => c.id)).size === 4, "chip ids are not unique");
+      assert(state.pieces.length === 0);
+      assert(state.settings.colorScheme === "red-blue");
+    });
+
+    test("the starting state does not share chips with the constants", () => {
+      const state = createInitialState();
+      state.chips[0].row = 99;
+      assert(CHIP_STARTS[0].row !== 99, "changing the state changed the constants");
+    });
 
     document.getElementById("summary").textContent =
       passed + " passed, " + failed + " failed";

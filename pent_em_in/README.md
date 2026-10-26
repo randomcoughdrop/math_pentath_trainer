@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 0 (project skeleton). The game itself is not playable yet. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 1 (the board is drawn). The game itself is not playable yet. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 
@@ -17,6 +17,10 @@ python3 -m http.server
 Then open `http://localhost:8000/pent_em_in/` in your browser.
 
 On GitHub Pages it works as-is, with no build step.
+
+To see the second color set (yellow and green instead of red and blue), add `?colors=yellow-green` to the address.
+
+To run the tests, open `tests/tests.html` the same way (for example `http://localhost:8000/pent_em_in/tests/tests.html`).
 
 ## Difficulty
 

@@ -30,9 +30,29 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/ui.js` | Status text, buttons, menus |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
+## Coordinates
+
+The rules number rows and columns from 1; the code counts from 0. "Row 4, column 7" in the rules is `{ row: 3, col: 6 }` in code. Constants carry a comment with the rules numbering next to each value.
+
+## Phase 1: Constants, State, and Drawing
+
+**`constants.js`** holds the fixed facts: the 13 × 9 size, the four star squares, the four chip starting squares, both color schemes, the per-difficulty rules (`BAND_RULES`), the preset levels, and `bandForLevel()`.
+
+**`state.js`** has `createInitialState()`, which returns a plain object. Chips are copied from the constants so changing the state never changes the constants. Fields for later phases (`pieces`, `history`, `strikes`, and so on) exist already but are empty.
+
+**`renderer.js`** has one public function, `render(canvas, state)`, which:
+
+1. Sizes the canvas to its on-screen size times `devicePixelRatio`, so lines are sharp on high-resolution screens.
+2. Draws, in order: background, tinted boot-and-hat squares, grid, stars, chips.
+
+Grid lines are exactly one device pixel wide and snapped to pixel centers. Stars are drawn as five-point polygons, and boot and hat are small vector silhouettes on a round chip. `main.js` redraws whenever the canvas changes size (using `ResizeObserver`).
+
+The renderer never changes the state.
+
+**Checking colors:** add `?colors=yellow-green` to the page address to see the second color scheme.
+
 ## To Be Written
 
-- Phase 1: state, renderer, constants
 - Phase 2: shapes and transform helpers, with diagrams of "external corner" and "flip over a side"
 - Phase 4: movement rules
 - Phase 6: challenge procedure
