@@ -3,42 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pent 'Em In</title>
-  <link rel="stylesheet" href="css/style.css">
+  <title>Games</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+    ul { padding-left: 1.2rem; }
+  </style>
 </head>
 <body>
-  <header>
-    <a href="../">&larr; All games</a>
-    <h1>Pent 'Em In</h1>
-  </header>
-
-  <main>
-    <p id="status" aria-live="polite">Loading...</p>
-
-    <div class="controls">
-      <button type="button" id="btn-rotate-left" title="Rotate counterclockwise (Shift+R)">&#8634; Rotate left</button>
-      <button type="button" id="btn-rotate-right" title="Rotate clockwise (R)">&#8635; Rotate right</button>
-      <button type="button" id="btn-flip" title="Flip left to right (F)">&#8646; Flip</button>
-      <button type="button" id="btn-place" title="Place the piece where the preview is">Place</button>
-      <button type="button" id="btn-cancel" title="Put the piece back (Esc)">Cancel</button>
-    </div>
-
-    <div class="board-wrapper">
-      <canvas id="board" width="1300" height="900" role="img" aria-label="Pent 'Em In game board"></canvas>
-    </div>
-
-    <section class="trays">
-      <div class="tray" id="tray-box-1">
-        <h2 id="tray-title-1">Player 1</h2>
-        <canvas id="tray-1" role="img" aria-label="Player 1 piece tray"></canvas>
-      </div>
-      <div class="tray" id="tray-box-2">
-        <h2 id="tray-title-2">Player 2</h2>
-        <canvas id="tray-2" role="img" aria-label="Player 2 piece tray"></canvas>
-      </div>
-    </section>
-  </main>
-
-  <script type="module" src="js/main.js"></script>
+  <h1>Games</h1>
+  <p>A small collection of simple games.</p>
+  <ul>
+    <li><a href="pent_em_in/">Pent 'Em In</a></li>
+  </ul>
 </body>
 </html>
