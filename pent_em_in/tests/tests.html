@@ -22,13 +22,18 @@
     } from "../js/constants.js";
     import { createInitialState } from "../js/state.js";
     import { analyzePlacement, analyzeMove, isAllowed } from "../js/analyze.js";
-    import { getLegalPlacements, hasLegalPlacement } from "../js/moves.js";
+    import {
+      getLegalPlacements, hasLegalPlacement, getPossibleMoves, getLegalMoves, isEntrapped,
+    } from "../js/moves.js";
+    import { snapshotOf, restoreSnapshot } from "../js/history.js";
     import { applyMove } from "../js/game.js";
     import {
       newHeldPiece, rotateHeld, flipHeld, cellsAt, computePreview,
+      slideTargets, rotateCorners, flipChoices, chipTargets, movementClick, turnMove,
+      chooseAction, clearSelection, buildOverlay,
     } from "../js/input.js";
-    import { boardCellFromPoint, trayIndexFromPoint } from "../js/renderer.js";
-    import { statusMessage } from "../js/ui.js";
+    import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
+    import { statusMessage, describeEntry } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
     import {
       SIDES, slideCells, rotateAboutVertex, flipOverSide, boundingBox,
@@ -529,6 +534,389 @@
       }
       assert(state.phase === "gameover" && state.winner === 2 && state.winReason === "placement");
       assert(getLegalPlacements(state, 1).length === 0);
+    });
+
+
+    // ---------------- Phase 4: movement ----------------
+
+    // A hand-built movement-phase state. Player 1 moves first.
+    const CHIPS_OUT_OF_THE_WAY = [
+      { id: 0, owner: 1, row: 6, col: 2 }, { id: 1, owner: 1, row: 7, col: 12 },
+      { id: 2, owner: 2, row: 7, col: 11 }, { id: 3, owner: 2, row: 1, col: 11 },
+    ];
+    function movementState(pieces, extra = {}) {
+      return { ...createInitialState(), phase: "movement", pieces, ...extra };
+    }
+    const piece = (id, owner, cells, shape = "I") => ({ id, owner, shape, cells });
+    const horizontalI = (row, col) => [[row, col], [row, col + 1], [row, col + 2], [row, col + 3], [row, col + 4]];
+    const verticalI = (row, col) => [[row, col], [row + 1, col], [row + 2, col], [row + 3, col], [row + 4, col]];
+    const slide = (pieceId, direction, distance) => ({ type: "slide", pieceId, direction, distance });
+    const rotate = (pieceId, pivot, quarterTurns) => ({ type: "rotate", pieceId, pivot, quarterTurns });
+    const flipMove = (pieceId, side) => ({ type: "flip", pieceId, side });
+    const chipMove = (chipId, row, col) => ({ type: "chip", chipId, to: { row, col } });
+    const analyze = (state, move) => analyzeMove(state, move);
+
+    test("a plain slide of any distance is legal", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0))]);
+      assert(analyze(state, slide(0, "right", 1)).legal);
+      assert(analyze(state, slide(0, "right", 8)).legal);
+      assert(analyze(state, slide(0, "down", 1)).legal);
+    });
+
+    test("sliding off the board is impossible", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0))]);
+      assert(!analyze(state, slide(0, "left", 1)).possible);
+      assert(!analyze(state, slide(0, "up", 1)).possible);
+      assert(!analyze(state, slide(0, "right", 9)).possible);
+    });
+
+    test("sliding onto a chip or piece is impossible", () => {
+      const state = movementState([piece(0, 1, horizontalI(3, 0)), piece(1, 2, horizontalI(8, 0))]);
+      assert(!analyze(state, slide(0, "right", 3)).possible, "lands on the chip at row 4, col 7");
+      const blocked = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(1, 0))]);
+      assert(!analyze(blocked, slide(0, "down", 1)).possible, "lands on a piece");
+    });
+
+    test("sliding over a chip or piece is possible but rule-breaking (slide-blocked)", () => {
+      const state = movementState([piece(0, 1, horizontalI(3, 0))]);
+      const jump = analyze(state, slide(0, "right", 7));
+      assert(jump.possible && jump.violations.includes("slide-blocked") && !jump.legal);
+      const overPiece = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(1, 0))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const hop = analyze(overPiece, slide(0, "down", 3));
+      assert(hop.possible && hop.violations.includes("slide-blocked"));
+    });
+
+    test("sliding over a star is rule-breaking; landing on one is star-landing", () => {
+      const state = movementState([piece(0, 1, horizontalI(1, 0))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const over = analyze(state, slide(0, "down", 2)); // passes the star at row 3, col 3 (rules numbering)
+      assert(over.possible && over.violations.includes("slide-blocked") && !over.violations.includes("star-landing"));
+      const onto = analyze(state, slide(0, "down", 1));
+      assert(onto.possible && onto.violations.includes("star-landing"));
+    });
+
+    test("rotating about an external corner is legal, and may sweep over things", () => {
+      const state = movementState([piece(0, 1, horizontalI(2, 0))], { chips: [
+        { id: 0, owner: 1, row: 4, col: 0 }, ...CHIPS_OUT_OF_THE_WAY.slice(1),
+      ] });
+      // Turning 90 degrees about the bottom-left corner swings the piece down column 0 ... onto the chip.
+      assert(!analyze(state, rotate(0, [3, 0], 1)).possible, "landing on the chip");
+      const sweeping = movementState([piece(0, 1, horizontalI(2, 0))], { chips: [
+        { id: 0, owner: 1, row: 4, col: 3 }, ...CHIPS_OUT_OF_THE_WAY.slice(1),
+      ] });
+      const result = analyze(sweeping, rotate(0, [3, 0], 1));
+      assert(result.legal, "a chip in the swept area doesn't matter: " + result.message);
+    });
+
+    test("a rotation needs a real external corner and a turn of 1 to 3 quarters", () => {
+      const state = movementState([piece(0, 1, horizontalI(2, 0))], { chips: CHIPS_OUT_OF_THE_WAY });
+      assert(!analyze(state, rotate(0, [2, 2], 1)).possible, "middle of an edge isn't a corner");
+      assert(!analyze(state, rotate(0, [3, 0], 4)).possible, "four turns is not a move");
+      assert(!analyze(state, rotate(0, [3, 0], 0)).possible);
+    });
+
+    test("flips mirror over a side; over the top of a piece in row 0 is off the board", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0))], { chips: CHIPS_OUT_OF_THE_WAY });
+      assert(analyze(state, flipMove(0, "bottom")).legal);
+      assert(!analyze(state, flipMove(0, "top")).possible);
+      assert(!analyze(state, flipMove(0, "left")).possible);
+      assert(!analyze(state, flipMove(0, "sideways")).possible);
+    });
+
+    test("a flip that lands on a star is star-landing", () => {
+      // A flat I in row 1 flipped over its bottom lands in row 2, covering the star at row 3, col 3.
+      const state = movementState([piece(0, 1, horizontalI(1, 0))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const result = analyze(state, flipMove(0, "bottom"));
+      assert(result.possible && result.violations.includes("star-landing"));
+    });
+
+    test("you can only move your own pieces and chips", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 0))]);
+      assert(!analyze(state, slide(1, "right", 1)).possible, "the other player's piece");
+      assert(!analyze(state, slide(99, "right", 1)).possible, "no such piece");
+      assert(!analyze(state, chipMove(2, 5, 8)).possible, "the other player's chip");
+    });
+
+    test("chips move like a queen", () => {
+      const state = movementState([]);
+      assert(analyze(state, chipMove(0, 3, 10)).legal, "along the row, from row 4, col 7");
+      assert(analyze(state, chipMove(0, 0, 3)).legal, "diagonally");
+      assert(!analyze(state, chipMove(0, 2, 8)).possible, "a knight's move is not allowed");
+      assert(!analyze(state, chipMove(0, 3, 6)).possible, "standing still");
+    });
+
+    test("chips can't land on a chip, and passing over one is chip-blocked", () => {
+      const state = movementState([]);
+      assert(!analyze(state, chipMove(0, 5, 6)).possible, "lands on the chip at row 6, col 7");
+      const over = analyze(state, chipMove(0, 6, 6));
+      assert(over.possible && over.violations.includes("chip-blocked"));
+      assert(!analyze(state, chipMove(0, 9, 6)).possible, "off the board");
+    });
+
+    test("chips can't pass over or land on a star", () => {
+      const state = movementState([], { chips: [
+        { id: 0, owner: 1, row: 2, col: 5 }, ...CHIPS_OUT_OF_THE_WAY.slice(1),
+      ] });
+      assert(analyze(state, chipMove(0, 2, 3)).legal, "next to the star");
+      assert(analyze(state, chipMove(0, 2, 2)).violations.includes("chip-blocked"), "on the star");
+      assert(analyze(state, chipMove(0, 2, 0)).violations.includes("chip-blocked"), "over the star");
+      assert(analyze(state, chipMove(0, 2, 4)).legal, "stopping short is fine");
+    });
+
+    test("no chip move two turns in a row", () => {
+      const state = movementState([], { lastWasChipMove: { 1: true, 2: false } });
+      const result = analyze(state, chipMove(0, 3, 10));
+      assert(result.possible && result.violations.includes("chip-repeat") && !result.legal);
+    });
+
+    test("the same piece can't move a third turn in a row, even with chip moves between", () => {
+      const state = movementState([
+        piece(0, 1, horizontalI(0, 0)), piece(2, 1, verticalI(3, 0)),
+        piece(1, 2, horizontalI(8, 8)), piece(3, 2, verticalI(0, 12)),
+      ], { chips: CHIPS_OUT_OF_THE_WAY });
+      const play = (st, move) => { const r = applyMove(st, move); assert(r.ok, r.message); return r.state; };
+
+      let st = play(state, slide(0, "right", 1)); // P1, count 1
+      st = play(st, slide(1, "left", 1));          // P2
+      st = play(st, slide(0, "right", 1));         // P1, count 2
+      assert(st.repeat[1].count === 2);
+      st = play(st, slide(1, "left", 1));          // P2
+      assert(!applyMove(st, slide(0, "right", 1)).ok, "third time");
+      assert(!applyMove(st, flipMove(0, "bottom")).ok, "any kind of move counts");
+      st = play(st, chipMove(1, 4, 9));            // P1 moves a chip instead
+      st = play(st, slide(3, "down", 1));          // P2 (a different piece, so it isn't repeating)
+      assert(!applyMove(st, slide(0, "left", 1)).ok, "a chip move in between doesn't reset the count");
+      st = play(st, slide(2, "right", 1));         // P1 moves a different piece
+      assert(st.repeat[1].pieceId === 2 && st.repeat[1].count === 1);
+    });
+
+    test("getLegalMoves is every possible move that breaks no rule", () => {
+      const state = movementState([piece(0, 1, horizontalI(3, 0)), piece(1, 2, horizontalI(8, 0))]);
+      const possible = getPossibleMoves(state);
+      const legal = getLegalMoves(state);
+      assert(legal.length > 0 && legal.length < possible.length, "some possible moves are rule-breaking");
+      assert(possible.every(({ analysis }) => analysis.possible));
+      assert(possible.filter(({ analysis }) => analysis.legal).length === legal.length);
+      assert(legal.every((move) => analyze(state, move).legal));
+      assert(!legal.some((move) => move.pieceId === 1), "only the player to move");
+    });
+
+    test("every legal move can be played, and every rule-breaking one is refused (Easy)", () => {
+      // A small deterministic random number generator, so the test is repeatable.
+      let seed = 12345;
+      const random = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+
+      for (let game = 0; game < 3; game++) {
+        let st = createInitialState({ startingPlayer: 1 });
+        for (let i = 0; i < 10 && st.phase === "placement"; i++) {
+          const options = getLegalPlacements(st, st.currentPlayer);
+          const pick = options[Math.floor(random() * options.length)];
+          st = applyMove(st, { type: "place", shape: pick.shape, cells: pick.cells }).state;
+        }
+        for (let turn = 0; turn < 12 && st.phase === "movement"; turn++) {
+          for (const { move, analysis } of getPossibleMoves(st)) {
+            const result = applyMove(st, move);
+            assert(result.ok === analysis.legal, "mismatch for " + JSON.stringify(move));
+          }
+          const legal = getLegalMoves(st);
+          st = applyMove(st, legal[Math.floor(random() * legal.length)]).state;
+        }
+      }
+    });
+
+    test("applyMove for movement changes the piece, logs it, and doesn't touch the old state", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const before = JSON.stringify(state);
+      const result = applyMove(state, slide(0, "right", 2));
+      assert(result.ok);
+      assert(JSON.stringify(state) === before, "old state changed");
+      assert(result.state.pieces[0].cells[0][1] === 2, "moved two squares");
+      assert(result.state.currentPlayer === 2);
+      assert(result.state.moveLog.length === 1 && result.state.moveLog[0].distance === 2);
+      assert(result.state.lastTurn.player === 1);
+    });
+
+    test("a chip move moves the chip and starts the chip-repeat rule", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const result = applyMove(state, chipMove(0, 6, 5));
+      assert(result.ok && result.state.chips[0].col === 5 && result.state.lastWasChipMove[1] === true);
+    });
+
+    test("placing is refused during movement, and moving is refused during placement", () => {
+      assert(!applyMove(movementState([]), { type: "place", shape: "I", cells: horizontalI(0, 0) }).ok);
+      assert(!applyMove(createInitialState(), slide(0, "right", 1)).ok);
+    });
+
+    test("a piece boxed in by chips and pieces is entrapped", () => {
+      const state = movementState([
+        piece(0, 1, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9]]),
+        piece(1, 2, horizontalI(0, 0)),
+      ], { chips: [{ id: 0, owner: 1, row: 0, col: 5 }, ...CHIPS_OUT_OF_THE_WAY.slice(1)], currentPlayer: 2 });
+      assert(isEntrapped(state, 1), "the piece in the corner can't move");
+      assert(getLegalMoves(state).filter((m) => m.pieceId === 1).length === 0);
+      // ...but it is not impossible, only illegal: it could slip past the chip by breaking the rule.
+      assert(getPossibleMoves(state).some(({ move }) => move.pieceId === 1), "rule-breaking moves exist");
+    });
+
+    test("a player whose pieces are all entrapped loses", () => {
+      const state = movementState([
+        piece(0, 1, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9]]),
+        piece(1, 2, horizontalI(0, 0)),
+      ], { chips: [
+        { id: 0, owner: 1, row: 0, col: 5 }, { id: 1, owner: 1, row: 5, col: 6 },
+        { id: 2, owner: 2, row: 6, col: 7 }, { id: 3, owner: 2, row: 5, col: 8 },
+      ] });
+      const result = applyMove(state, chipMove(1, 5, 7)); // Player 1 makes any harmless move
+      assert(result.ok);
+      assert(result.state.phase === "gameover" && result.state.winner === 1 && result.state.winReason === "entrapment");
+    });
+
+    test("a player with one trapped piece and one free piece keeps playing", () => {
+      const state = movementState([
+        piece(0, 1, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9]]),
+        piece(1, 2, horizontalI(0, 0)),
+        piece(2, 2, horizontalI(8, 4)),
+      ], { chips: [
+        { id: 0, owner: 1, row: 0, col: 5 }, { id: 1, owner: 1, row: 5, col: 6 },
+        { id: 2, owner: 2, row: 6, col: 7 }, { id: 3, owner: 2, row: 5, col: 8 },
+      ] });
+      const result = applyMove(state, chipMove(1, 5, 7));
+      assert(result.ok && result.state.phase === "movement");
+    });
+
+    test("every move saves a snapshot, with no history nested inside it", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const one = applyMove(state, slide(0, "right", 1)).state;
+      const two = applyMove(one, slide(1, "left", 1)).state;
+      assert(two.history.length === 2 && one.history.length === 1);
+      assert(!("history" in two.history[0]) && !("history" in two.history[1]));
+      assert(JSON.stringify(two.history[1]) === JSON.stringify(snapshotOf(one)));
+    });
+
+    test("restoreSnapshot brings back an earlier state", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const one = applyMove(state, slide(0, "right", 1)).state;
+      const two = applyMove(one, slide(1, "left", 1)).state;
+      const back = restoreSnapshot(two, 1);
+      assert(JSON.stringify(snapshotOf(back)) === JSON.stringify(snapshotOf(one)), "same as before move 2");
+      assert(back.history.length === 1, "history cut back");
+      assert(restoreSnapshot(two, 5) === null);
+    });
+
+    test("placements are saved in the history too", () => {
+      const state = createInitialState();
+      const next = applyMove(state, { type: "place", shape: "I", cells: horizontalI(0, 0) }).state;
+      assert(next.history.length === 1 && next.history[0].pieces.length === 0);
+    });
+
+    test("clicking: select a piece, then click a marked square to slide", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const view = { selected: null, action: "slide", pivot: null, notice: "" };
+      const legal = getLegalMoves(state);
+
+      assert(movementClick(state, view, legal, { row: 0, col: 2 }, null) === null);
+      assert(view.selected && view.selected.id === 0 && view.selected.anchor[1] === 2);
+      assert(slideTargets(legal, state.pieces[0], [0, 2]).has("0,5"), "slide right 3 puts the picked-up square at col 5");
+      const move = movementClick(state, view, legal, { row: 0, col: 5 }, null);
+      assert(move && move.type === "slide" && move.direction === "right" && move.distance === 3);
+    });
+
+    test("clicking: the other player's piece can't be picked up", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const view = { selected: null, action: "slide", pivot: null, notice: "" };
+      movementClick(state, view, getLegalMoves(state), { row: 8, col: 9 }, null);
+      assert(view.selected === null && view.notice !== "");
+    });
+
+    test("clicking: rotate by choosing a corner and then a turn", () => {
+      const state = movementState([piece(0, 1, horizontalI(2, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const view = { selected: null, action: "slide", pivot: null, notice: "" };
+      const legal = getLegalMoves(state);
+      movementClick(state, view, legal, { row: 2, col: 1 }, null);
+      chooseAction(view, "rotate");
+      assert(rotateCorners(legal, 0).length > 0);
+      assert(movementClick(state, view, legal, null, [3, 0]) === null && view.pivot[0] === 3, "corner chosen");
+      const move = turnMove(state, view, legal, 1);
+      assert(move && move.type === "rotate" && move.quarterTurns === 1 && move.pivot[0] === 3);
+      assert(applyMove(state, move).ok);
+    });
+
+    test("clicking: flip by clicking one of the see-through copies", () => {
+      const state = movementState([piece(0, 1, horizontalI(4, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const view = { selected: null, action: "slide", pivot: null, notice: "" };
+      const legal = getLegalMoves(state);
+      movementClick(state, view, legal, { row: 4, col: 0 }, null);
+      chooseAction(view, "flip");
+      const sides = flipChoices(legal, state.pieces[0]).map((choice) => choice.move.side).sort();
+      assert(sides.join() === "bottom,right,top", "left would leave the board: " + sides);
+      const move = movementClick(state, view, legal, { row: 5, col: 2 }, null);
+      assert(move && move.type === "flip" && move.side === "bottom");
+    });
+
+    test("clicking: select a chip, then a marked square", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))]);
+      const view = { selected: null, action: "slide", pivot: null, notice: "" };
+      const legal = getLegalMoves(state);
+      movementClick(state, view, legal, { row: 3, col: 6 }, null);
+      assert(view.selected && view.selected.kind === "chip" && view.selected.id === 0);
+      assert(chipTargets(legal, 0).has("3,10"));
+      const move = movementClick(state, view, legal, { row: 3, col: 10 }, null);
+      assert(move && move.type === "chip" && move.to.col === 10);
+    });
+
+    test("the overlay marks what the selection can do", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const legal = getLegalMoves(state);
+      const view = { selected: null, action: "slide", pivot: null, hover: null, turnPreview: null, notice: "" };
+      assert(Object.keys(buildOverlay(state, view, legal)).length === 0, "nothing selected");
+      movementClick(state, view, legal, { row: 0, col: 0 }, null);
+      view.hover = { row: 0, col: 3 };
+      const overlay = buildOverlay(state, view, legal);
+      assert(overlay.selectedPieceId === 0 && overlay.destinations.length > 0);
+      assert(overlay.ghosts && overlay.ghosts.length === 1, "ghost under the pointer");
+      clearSelection(view);
+      assert(view.selected === null);
+    });
+
+    test("pointing at a grid corner", () => {
+      assert(JSON.stringify(vertexFromPoint(25, 25, 1350)) === "[0,0]");
+      assert(JSON.stringify(vertexFromPoint(126, 26, 1350)) === "[0,1]");
+      assert(vertexFromPoint(75, 75, 1350) === null, "middle of a square");
+      assert(JSON.stringify(vertexFromPoint(1325, 925, 1350)) === "[9,13]");
+    });
+
+    test("the move log describes each kind of move", () => {
+      const state = movementState([piece(0, 1, horizontalI(2, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const slid = applyMove(state, slide(0, "down", 2)).state;
+      assert(describeEntry(slid, slid.moveLog[0]) === "Player 1 (Red) slid the I down 2.", describeEntry(slid, slid.moveLog[0]));
+      const turned = applyMove(state, rotate(0, [3, 0], 1)).state;
+      assert(describeEntry(turned, turned.moveLog[0]).includes("90° clockwise around the bottom-left corner of row 3, col 1"),
+        describeEntry(turned, turned.moveLog[0]));
+      const flipped = applyMove(state, flipMove(0, "bottom")).state;
+      assert(describeEntry(flipped, flipped.moveLog[0]).includes("over its bottom side"));
+      const chipped = applyMove(state, chipMove(1, 4, 9)).state;
+      assert(describeEntry(chipped, chipped.moveLog[0]).includes("from row 8, col 13 to row 5, col 10"),
+        describeEntry(chipped, chipped.moveLog[0]));
+    });
+
+    test("the status line guides movement and announces an entrapment win", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const legal = getLegalMoves(state);
+      const view = { selected: null, action: "slide", pivot: null, hover: null, notice: "" };
+      assert(statusMessage(state, view, null, legal).includes("click one of your pieces or chips"));
+      movementClick(state, view, legal, { row: 0, col: 1 }, null);
+      assert(statusMessage(state, view, null, legal).includes("slide the I"));
+      const over = { ...state, phase: "gameover", winner: 1, winReason: "entrapment" };
+      assert(statusMessage(over, view, null, []).includes("trapped") && statusMessage(over, view, null, []).includes("Player 1"));
+    });
+
+    test("the streak badge rule: only a piece moved twice in a row is marked", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(2, 1, verticalI(3, 0)),
+        piece(1, 2, horizontalI(8, 8)), piece(3, 2, verticalI(0, 12))], { chips: CHIPS_OUT_OF_THE_WAY });
+      let st = applyMove(state, slide(0, "right", 1)).state;
+      st = applyMove(st, slide(1, "left", 1)).state;
+      st = applyMove(st, slide(0, "right", 1)).state;
+      assert(st.repeat[1].pieceId === 0 && st.repeat[1].count === 2, "piece 0 has a x2 streak");
+      assert(st.repeat[2].count === 1);
     });
 
     test("rotating the held piece four times returns it; cw then ccw cancels", () => {

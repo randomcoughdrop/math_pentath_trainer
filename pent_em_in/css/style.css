@@ -1,5 +1,10 @@
 /* Page layout and buttons. The board and trays are drawn on canvases by js/renderer.js. */
 
+/* The hidden attribute must win over the display rules below. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: system-ui, sans-serif;
   max-width: 1000px;
@@ -40,9 +45,48 @@ h2 {
   font-size: 1rem;
 }
 
+/* Wider than a hand: keep the turn buttons together. */
+.control-group {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+/* A button that is the current choice. */
+.controls button.active {
+  background: #ffd54a;
+  border-color: #7a5b00;
+}
+
+/* The board, with the move log beside it (below it on narrow screens). */
+.play-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
 /* The canvases shrink to fit narrow screens and keep their shapes. */
 .board-wrapper {
-  width: 100%;
+  flex: 1 1 500px;
+  min-width: 0;
+}
+
+.log-panel {
+  flex: 1 1 200px;
+  max-width: 260px;
+}
+
+.log-scroll {
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid #999;
+  background: #fbfaf5;
+}
+
+.log-panel ol {
+  margin: 0;
+  padding: 0.4rem 0.5rem 0.4rem 2rem;
+  font-size: 0.85rem;
 }
 
 canvas {

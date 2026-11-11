@@ -49,6 +49,7 @@ export const BOARD_COLORS = {
   star: "#e0a800",
   starEdge: "#7a5b00",
   highlight: "#fff1a8", // behind the shape you are holding in your tray
+  selected: "#ffd000", // outline around the piece or chip you have selected to move
 };
 
 // What each difficulty band changes. Later phases read these flags.

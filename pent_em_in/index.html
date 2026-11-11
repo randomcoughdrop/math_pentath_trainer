@@ -15,7 +15,8 @@
   <main>
     <p id="status" aria-live="polite">Loading...</p>
 
-    <div class="controls">
+    <!-- Placement phase controls -->
+    <div class="controls" id="placement-controls">
       <button type="button" id="btn-rotate-left" title="Rotate counterclockwise (Shift+R)">&#8634; Rotate left</button>
       <button type="button" id="btn-rotate-right" title="Rotate clockwise (R)">&#8635; Rotate right</button>
       <button type="button" id="btn-flip" title="Flip left to right (F)">&#8646; Flip</button>
@@ -23,11 +24,31 @@
       <button type="button" id="btn-cancel" title="Put the piece back (Esc)">Cancel</button>
     </div>
 
-    <div class="board-wrapper">
-      <canvas id="board" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
+    <!-- Movement phase controls -->
+    <div class="controls" id="movement-controls" hidden>
+      <button type="button" id="btn-slide" title="Slide the selected piece in a straight line">Slide</button>
+      <button type="button" id="btn-rotate" title="Rotate the selected piece around one of its outer corners">Rotate</button>
+      <button type="button" id="btn-flip-piece" title="Flip the selected piece over one of its four sides">Flip</button>
+      <span class="control-group" aria-label="Turn">
+        <button type="button" id="btn-turn-90">&#8635; 90&deg;</button>
+        <button type="button" id="btn-turn-180">&#8635; 180&deg;</button>
+        <button type="button" id="btn-turn-270">&#8635; 270&deg;</button>
+      </span>
+      <button type="button" id="btn-move-cancel" title="Deselect (Esc)">Deselect</button>
     </div>
 
-    <section class="trays">
+    <div class="play-area">
+      <div class="board-wrapper">
+        <canvas id="board" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
+      </div>
+
+      <aside class="log-panel">
+        <h2>Move log</h2>
+        <div class="log-scroll"><ol id="move-log"></ol></div>
+      </aside>
+    </div>
+
+    <section class="trays" id="trays">
       <div class="tray" id="tray-box-1">
         <h2 id="tray-title-1">Player 1</h2>
         <canvas id="tray-1" role="img" aria-label="Player 1 piece tray"></canvas>

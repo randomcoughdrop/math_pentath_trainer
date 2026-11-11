@@ -25,9 +25,16 @@ const BLOCKED_LOOK = { fill: "#6b665a", edge: "#2d2a24" };
 // Public entry points
 // ---------------------------------------------------------------------------
 
-// Draw the board: grid, stars, markings, pieces, the ghost preview, and chips.
-// `preview` is optional: { cells, ok } for the piece being held over the board.
-export function render(canvas, state, preview = null) {
+// Draw the board: grid, stars, markings, pieces, ghosts, hints, and chips.
+// `extras` is optional, and only holds things that are not part of the game:
+//   preview          { cells, ok }  the piece being held over the board (placement)
+//   selectedPieceId  a piece to outline
+//   selectedChipId   a chip to ring
+//   destinations     [[row, col], ...] squares to mark as places to click
+//   corners          [[row, col], ...] grid corners to mark as places to pivot
+//   pivot            [row, col] the corner that has been chosen
+//   ghosts           [{ cells }] see-through pieces showing where a move would land
+export function render(canvas, state, extras = {}) {
   const layout = fitCanvas(canvas, COLS + 2 * BOARD_MARGIN, ROWS + 2 * BOARD_MARGIN);
   if (!layout) return; // the canvas is hidden or has no size yet
 
@@ -48,7 +55,7 @@ export function render(canvas, state, preview = null) {
     pixelWidth: Math.round(COLS * layout.cell * layout.dpr),
     pixelHeight: Math.round(ROWS * layout.cell * layout.dpr),
   };
-  drawBoard(ctx, state, boardLayout, preview);
+  drawBoard(ctx, state, boardLayout, extras);
 }
 
 // Draw one player's piece tray. Shapes that player has already placed are
@@ -78,6 +85,20 @@ export function boardCellFromPoint(x, y, width) {
   const row = Math.floor(boardY / cell);
   if (boardX < 0 || boardY < 0 || col >= COLS || row >= ROWS) return null;
   return { row, col };
+}
+
+// Which grid corner (where four squares meet) is near pixel (x, y)? Returns
+// [row, col] of the corner (the top-left corner of square [row, col]), or null
+// if the point isn't close to one. Used to pick a pivot for rotating.
+export function vertexFromPoint(x, y, width) {
+  const cell = width / (COLS + 2 * BOARD_MARGIN);
+  const boardX = x / cell - BOARD_MARGIN;
+  const boardY = y / cell - BOARD_MARGIN;
+  const col = Math.round(boardX);
+  const row = Math.round(boardY);
+  if (Math.hypot(boardX - col, boardY - row) > 0.3) return null;
+  if (col < 0 || col > COLS || row < 0 || row > ROWS) return null;
+  return [row, col];
 }
 
 // Which tray box (0 to 11, in SHAPE_NAMES order) is at pixel (x, y) on a tray
@@ -145,7 +166,7 @@ function drawGridLines(ctx, layout, columns, rows, step) {
 // The board
 // ---------------------------------------------------------------------------
 
-export function drawBoard(ctx, state, layout, preview = null) {
+export function drawBoard(ctx, state, layout, extras = {}) {
   const colors = COLOR_SCHEMES[state.settings.colorScheme];
 
   drawBackground(ctx, layout);
@@ -154,8 +175,14 @@ export function drawBoard(ctx, state, layout, preview = null) {
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
   drawPieces(ctx, state, layout, colors);
-  drawGhost(ctx, state, layout, colors, preview);
+  drawSelection(ctx, state, layout, extras);
+  for (const ghost of extras.ghosts ?? []) {
+    drawGhost(ctx, state, layout, colors, { cells: ghost.cells, ok: true });
+  }
+  if (extras.preview) drawGhost(ctx, state, layout, colors, extras.preview);
   drawChips(ctx, state, layout, colors);
+  drawHints(ctx, layout, extras);
+  drawStreakBadges(ctx, state, layout);
 }
 
 function drawBackground(ctx, { width, height }) {
@@ -224,7 +251,6 @@ function drawPieces(ctx, state, { cell }, colors) {
 // looks like the piece in its owner's color; if not, it is grey with a slash
 // through every square (a shape cue, so it never depends on telling colors apart).
 function drawGhost(ctx, state, { cell }, colors, preview) {
-  if (!preview) return;
 
   if (preview.ok) {
     ctx.globalAlpha = 0.6;
@@ -245,6 +271,79 @@ function drawGhost(ctx, state, { cell }, colors, preview) {
   }
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+// A bright outline around the selected piece, and a ring around the selected chip.
+function drawSelection(ctx, state, { cell }, extras) {
+  const piece = state.pieces.find((candidate) => candidate.id === extras.selectedPieceId);
+  if (piece) {
+    ctx.strokeStyle = BOARD_COLORS.selected;
+    ctx.lineWidth = Math.max(4, cell * 0.14);
+    strokeOuterEdges(ctx, piece.cells, 0, 0, cell);
+  }
+
+  const chip = state.chips.find((candidate) => candidate.id === extras.selectedChipId);
+  if (chip) {
+    ctx.strokeStyle = BOARD_COLORS.selected;
+    ctx.lineWidth = Math.max(3, cell * 0.1);
+    ctx.beginPath();
+    ctx.arc((chip.col + 0.5) * cell, (chip.row + 0.5) * cell, cell * 0.36, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Dots on squares that can be clicked, and on grid corners a piece can pivot around.
+function drawHints(ctx, { cell }, extras) {
+  ctx.lineWidth = Math.max(1.5, cell * 0.04);
+
+  for (const [row, col] of extras.destinations ?? []) {
+    ctx.fillStyle = "rgba(255, 241, 168, 0.95)";
+    ctx.strokeStyle = BOARD_COLORS.starEdge;
+    ctx.beginPath();
+    ctx.arc((col + 0.5) * cell, (row + 0.5) * cell, cell * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  for (const [row, col] of extras.corners ?? []) {
+    const chosen = extras.pivot && extras.pivot[0] === row && extras.pivot[1] === col;
+    ctx.fillStyle = chosen ? BOARD_COLORS.selected : "#ffffff";
+    ctx.strokeStyle = "#2d2a24";
+    ctx.beginPath();
+    ctx.arc(col * cell, row * cell, cell * (chosen ? 0.17 : 0.13), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+// A small "x2" badge on a piece that its owner has moved twice in a row: it
+// can't be moved a third time.
+function drawStreakBadges(ctx, state, { cell }) {
+  for (const piece of state.pieces) {
+    const streak = state.repeat[piece.owner];
+    if (streak.pieceId !== piece.id || streak.count < 2) continue;
+
+    // Put the badge on the piece's top-left square, at its upper-right corner.
+    const [row, col] = [...piece.cells].sort((a, b) => a[0] - b[0] || a[1] - b[1])[0];
+    const x = (col + 1) * cell - cell * 0.22;
+    const y = row * cell + cell * 0.22;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#2d2a24";
+    ctx.lineWidth = Math.max(1.5, cell * 0.04);
+    ctx.beginPath();
+    ctx.arc(x, y, cell * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#2d2a24";
+    ctx.font = "bold " + Math.round(cell * 0.24) + "px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("\u00d7" + streak.count, x, y + cell * 0.01);
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
+  }
 }
 
 // Chips are plain solid discs in the owner's color.
@@ -305,8 +404,6 @@ function drawIcon(ctx, kind, left, top, size, color) {
 // Draw one pentomino. Cell [row, col] is drawn at (left + col * unit, top + row * unit).
 // "look" supplies the fill and edge colors.
 function drawCells(ctx, cells, left, top, unit, look) {
-  const owned = new Set(cells.map(([row, col]) => row + "," + col));
-
   // Solid squares.
   ctx.fillStyle = look.fill;
   for (const [row, col] of cells) {
@@ -323,6 +420,14 @@ function drawCells(ctx, cells, left, top, unit, look) {
   // A heavier outline, only along edges that touch empty space.
   ctx.strokeStyle = look.edge;
   ctx.lineWidth = Math.max(2, unit * 0.08);
+  strokeOuterEdges(ctx, cells, left, top, unit);
+}
+
+// Stroke (with the current stroke style) only the edges of the piece that
+// touch empty space.
+function strokeOuterEdges(ctx, cells, left, top, unit) {
+  const owned = new Set(cells.map(([row, col]) => row + "," + col));
+
   ctx.lineCap = "square";
   ctx.beginPath();
   for (const [row, col] of cells) {

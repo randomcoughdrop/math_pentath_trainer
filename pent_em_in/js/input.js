@@ -1,19 +1,29 @@
 // Turns mouse, touch, and keyboard input into game actions.
 //
-// The piece a player is holding, and where the cursor is, are temporary and
-// are not part of the game, so they live in a small "view" object that the
-// page owns:  { held, hover, notice, announce }
-//   held   - { shape, cells } the shape picked from the tray, in its current orientation
-//   hover  - { row, col } the board square the cursor (or last tap) is on
-//   notice - a short message to show, such as why a click didn't work
+// What a player is in the middle of (the piece they hold, the piece they have
+// selected, where the cursor is) is temporary and is not part of the game, so
+// it lives in a small "view" object that the page owns:
+//   held      - placement: { shape, cells } the shape picked from the tray
+//   hover     - { row, col } the board square the cursor (or last tap) is on
+//   notice    - a short message to show, such as why a click didn't work
+//   announce  - a one-time message for the first turn
+//   selected  - movement: { kind: "piece", id, anchor: [row, col] } or { kind: "chip", id }
+//   action    - movement: "slide", "rotate", or "flip" for the selected piece
+//   pivot     - movement: the corner chosen to rotate around, [row, col]
+//   turnPreview - movement: 1, 2, or 3, while the pointer is over a turn button
+//
+// Everything that decides things is a plain function (easy to test). Only
+// setupInput touches the page.
 
 import { SHAPE_NAMES, getShapeCells } from "./pieces.js";
 import { rotateAboutVertex, flipOverSide, normalize, slideCells } from "./transforms.js";
 import { analyzeMove, isAllowed } from "./analyze.js";
-import { boardCellFromPoint, trayIndexFromPoint } from "./renderer.js";
+import { getLegalMoves } from "./moves.js";
+import { DIRECTIONS, cellsAfterMove } from "./rules.js";
+import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "./renderer.js";
 
 // ---------------------------------------------------------------------------
-// The held piece (pure helpers: no page needed, so they are easy to test)
+// Placement: the held piece
 // ---------------------------------------------------------------------------
 
 // Pick up a shape in its starting orientation.
@@ -54,61 +64,272 @@ export function computePreview(state, held, hover) {
 }
 
 // ---------------------------------------------------------------------------
+// Movement: what can be clicked
+// ---------------------------------------------------------------------------
+
+// The legal moves for the current player, worked out once per state.
+let cache = { state: null, moves: [] };
+export function legalMovesFor(state) {
+  if (cache.state !== state) {
+    cache = { state, moves: state.phase === "movement" ? getLegalMoves(state) : [] };
+  }
+  return cache.moves;
+}
+
+const sameSquare = (a, b) => a[0] === b[0] && a[1] === b[1];
+const squareKey = (row, col) => row + "," + col;
+
+export function movesForPiece(legal, pieceId) {
+  return legal.filter((move) => move.pieceId === pieceId);
+}
+
+// Squares the clicked square of a piece could slide to, as a Map of
+// "row,col" -> move. (The piece moves as a whole: where the square you picked
+// it up by would land.)
+export function slideTargets(legal, piece, anchor) {
+  const targets = new Map();
+  for (const move of movesForPiece(legal, piece.id)) {
+    if (move.type !== "slide") continue;
+    const [stepRow, stepCol] = DIRECTIONS[move.direction];
+    targets.set(squareKey(anchor[0] + stepRow * move.distance, anchor[1] + stepCol * move.distance), move);
+  }
+  return targets;
+}
+
+// Corners of the piece where at least one rotation is legal.
+export function rotateCorners(legal, pieceId) {
+  const corners = [];
+  for (const move of movesForPiece(legal, pieceId)) {
+    if (move.type === "rotate" && !corners.some((corner) => sameSquare(corner, move.pivot))) {
+      corners.push(move.pivot);
+    }
+  }
+  return corners;
+}
+
+// Which quarter turns (1, 2, 3) are legal around a corner.
+export function rotateTurns(legal, pieceId, pivot) {
+  return movesForPiece(legal, pieceId)
+    .filter((move) => move.type === "rotate" && sameSquare(move.pivot, pivot))
+    .map((move) => move.quarterTurns);
+}
+
+// The legal flips, each with the squares the piece would land on.
+export function flipChoices(legal, piece) {
+  return movesForPiece(legal, piece.id)
+    .filter((move) => move.type === "flip")
+    .map((move) => ({ move, cells: cellsAfterMove(piece.cells, move) }));
+}
+
+// Squares the chip could move to, as a Map of "row,col" -> move.
+export function chipTargets(legal, chipId) {
+  const targets = new Map();
+  for (const move of legal) {
+    if (move.type === "chip" && move.chipId === chipId) {
+      targets.set(squareKey(move.to.row, move.to.col), move);
+    }
+  }
+  return targets;
+}
+
+// Extra things for the renderer to draw on top of the board while a piece or
+// chip is selected: { selectedPieceId, selectedChipId, destinations, corners, pivot, ghosts }.
+export function buildOverlay(state, view, legal) {
+  const overlay = {};
+  const selected = view.selected;
+  if (state.phase !== "movement" || !selected) return overlay;
+
+  if (selected.kind === "chip") {
+    overlay.selectedChipId = selected.id;
+    overlay.destinations = [...chipTargets(legal, selected.id).values()].map((move) => [move.to.row, move.to.col]);
+    return overlay;
+  }
+
+  const piece = state.pieces.find((candidate) => candidate.id === selected.id);
+  if (!piece) return overlay;
+  overlay.selectedPieceId = piece.id;
+
+  if (view.action === "slide") {
+    const targets = slideTargets(legal, piece, selected.anchor);
+    overlay.destinations = [...targets.keys()].map((key) => key.split(",").map(Number));
+
+    // Pointing at a destination shows where the piece would land.
+    const over = view.hover && targets.get(squareKey(view.hover.row, view.hover.col));
+    if (over) overlay.ghosts = [{ cells: cellsAfterMove(piece.cells, over) }];
+  } else if (view.action === "rotate") {
+    overlay.corners = rotateCorners(legal, piece.id);
+    overlay.pivot = view.pivot;
+    if (view.pivot && view.turnPreview) {
+      const move = movesForPiece(legal, piece.id).find((candidate) =>
+        candidate.type === "rotate" && candidate.quarterTurns === view.turnPreview && sameSquare(candidate.pivot, view.pivot));
+      if (move) overlay.ghosts = [{ cells: cellsAfterMove(piece.cells, move) }];
+    }
+  } else if (view.action === "flip") {
+    overlay.ghosts = flipChoices(legal, piece).map((choice) => ({ cells: choice.cells }));
+  }
+
+  return overlay;
+}
+
+// ---------------------------------------------------------------------------
+// Movement: clicks
+// ---------------------------------------------------------------------------
+
+// Forget the current selection.
+export function clearSelection(view) {
+  view.selected = null;
+  view.action = "slide";
+  view.pivot = null;
+  view.turnPreview = null;
+}
+
+// Switch what the selected piece will do: "slide", "rotate", or "flip".
+export function chooseAction(view, action) {
+  if (!view.selected || view.selected.kind !== "piece") return;
+  view.action = action;
+  view.pivot = null;
+  view.turnPreview = null;
+}
+
+// A click on the board during movement. `cell` is the square clicked ({ row, col },
+// or null) and `vertex` the grid corner nearest the click ([row, col], or null).
+// Selects pieces and chips, picks pivots, and returns a move when the click
+// completes one (the caller plays it); otherwise returns null.
+export function movementClick(state, view, legal, cell, vertex) {
+  view.notice = "";
+  const selected = view.selected;
+
+  if (selected && selected.kind === "piece") {
+    const piece = state.pieces.find((candidate) => candidate.id === selected.id);
+
+    if (view.action === "rotate" && vertex && rotateCorners(legal, piece.id).some((corner) => sameSquare(corner, vertex))) {
+      view.pivot = vertex;
+      return null;
+    }
+    if (view.action === "flip" && cell) {
+      const choice = flipChoices(legal, piece).find((candidate) =>
+        candidate.cells.some(([row, col]) => row === cell.row && col === cell.col));
+      if (choice) return choice.move;
+    }
+    if (view.action === "slide" && cell) {
+      const move = slideTargets(legal, piece, selected.anchor).get(squareKey(cell.row, cell.col));
+      if (move) return move;
+    }
+  }
+
+  if (selected && selected.kind === "chip" && cell) {
+    const move = chipTargets(legal, selected.id).get(squareKey(cell.row, cell.col));
+    if (move) return move;
+  }
+
+  if (!cell) return null;
+
+  // Otherwise the click picks something up.
+  const piece = state.pieces.find((candidate) => candidate.cells.some(([row, col]) => row === cell.row && col === cell.col));
+  if (piece) {
+    if (piece.owner !== state.currentPlayer) {
+      view.notice = "That isn't your piece.";
+      return null;
+    }
+    const samePiece = selected && selected.kind === "piece" && selected.id === piece.id;
+    if (!samePiece) {
+      view.action = "slide";
+      view.pivot = null;
+      view.turnPreview = null;
+    }
+    view.selected = { kind: "piece", id: piece.id, anchor: [cell.row, cell.col] };
+    if (movesForPiece(legal, piece.id).length === 0) view.notice = "That piece has no legal move right now.";
+    return null;
+  }
+
+  const chip = state.chips.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
+  if (chip) {
+    if (chip.owner !== state.currentPlayer) {
+      view.notice = "That isn't your chip.";
+      return null;
+    }
+    clearSelection(view);
+    view.selected = { kind: "chip", id: chip.id };
+    if (chipTargets(legal, chip.id).size === 0) view.notice = "That chip has no legal move right now.";
+  }
+
+  return null;
+}
+
+// The move for a turn button (90, 180, or 270 degrees), if there is one.
+export function turnMove(state, view, legal, quarterTurns) {
+  if (!view.selected || view.selected.kind !== "piece" || !view.pivot) return null;
+  return movesForPiece(legal, view.selected.id).find((move) =>
+    move.type === "rotate" && move.quarterTurns === quarterTurns && sameSquare(move.pivot, view.pivot)) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Wiring to the page
 // ---------------------------------------------------------------------------
 
 // Connect the board, trays, buttons, and keyboard.
 //   board, trays    - the canvas elements (trays is { 1: canvas, 2: canvas })
-//   buttons         - { rotateLeft, rotateRight, flip, place, cancel }
+//   buttons         - every button (see index.html)
 //   view            - the temporary state described at the top of this file
 //   getState        - returns the current game state
-//   onPlace(move)   - tries to play a placement; returns { ok, message }
+//   onMove(move)    - tries to play a move; returns { ok, message }
 //   onChange()      - called after anything that needs a redraw
-export function setupInput({ board, trays, buttons, view, getState, onPlace, onChange }) {
-  function isPlacing() {
-    return getState().phase === "placement";
+export function setupInput({ board, trays, buttons, view, getState, onMove, onChange }) {
+  const phaseIs = (phase) => getState().phase === phase;
+
+  function play(move) {
+    const result = onMove(move);
+    view.notice = result.ok ? "" : result.message;
+    onChange();
   }
 
-  // --- actions ---
+  // --- placement actions ---
 
   function rotate(clockwise) {
-    if (!isPlacing() || !view.held) return;
+    if (!phaseIs("placement") || !view.held) return;
     view.held = rotateHeld(view.held, clockwise);
     view.notice = "";
     onChange();
   }
 
   function flip() {
-    if (!isPlacing() || !view.held) return;
+    if (!phaseIs("placement") || !view.held) return;
     view.held = flipHeld(view.held);
     view.notice = "";
     onChange();
   }
 
   function cancel() {
-    if (!view.held) return;
-    view.held = null;
+    if (phaseIs("placement") && view.held) {
+      view.held = null;
+    } else if (phaseIs("movement") && view.selected) {
+      clearSelection(view);
+    } else {
+      return;
+    }
     view.notice = "";
     onChange();
   }
 
   function tryPlace() {
-    if (!isPlacing() || !view.held || !view.hover) return;
-    const move = {
+    if (!phaseIs("placement") || !view.held || !view.hover) return;
+    play({
       type: "place",
       shape: view.held.shape,
       cells: cellsAt(view.held, view.hover.row, view.hover.col),
-    };
-    const result = onPlace(move);
-    view.notice = result.ok ? "" : result.message;
-    onChange();
+    });
   }
 
   // --- the board ---
 
-  function squareUnderPointer(event) {
+  function pointOnBoard(event) {
     const rect = board.getBoundingClientRect();
-    return boardCellFromPoint(event.clientX - rect.left, event.clientY - rect.top, rect.width);
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width };
+  }
+
+  function squareUnderPointer(event) {
+    const { x, y, width } = pointOnBoard(event);
+    return boardCellFromPoint(x, y, width);
   }
 
   // A mouse hovers, so the ghost follows it. A finger doesn't hover; it taps.
@@ -125,8 +346,18 @@ export function setupInput({ board, trays, buttons, view, getState, onPlace, onC
   });
 
   board.addEventListener("pointerup", (event) => {
-    if (!isPlacing() || !view.held) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    const state = getState();
+
+    if (state.phase === "movement") {
+      const { x, y, width } = pointOnBoard(event);
+      const move = movementClick(state, view, legalMovesFor(state), boardCellFromPoint(x, y, width), vertexFromPoint(x, y, width));
+      if (move) play(move);
+      else onChange();
+      return;
+    }
+
+    if (state.phase !== "placement" || !view.held) return;
 
     const square = squareUnderPointer(event);
     if (!square) return;
@@ -138,8 +369,8 @@ export function setupInput({ board, trays, buttons, view, getState, onPlace, onC
     }
 
     // Touch: the first tap moves the ghost there; tapping the same square again places.
-    const sameSquare = view.hover && view.hover.row === square.row && view.hover.col === square.col;
-    if (sameSquare) {
+    const sameSquareTapped = view.hover && view.hover.row === square.row && view.hover.col === square.col;
+    if (sameSquareTapped) {
       tryPlace();
     } else {
       view.hover = square;
@@ -181,6 +412,31 @@ export function setupInput({ board, trays, buttons, view, getState, onPlace, onC
   buttons.flip.addEventListener("click", flip);
   buttons.place.addEventListener("click", tryPlace);
   buttons.cancel.addEventListener("click", cancel);
+
+  // Movement: choose what the selected piece does.
+  for (const action of ["slide", "rotate", "flip"]) {
+    buttons[action + "Action"].addEventListener("click", () => {
+      chooseAction(view, action);
+      view.notice = "";
+      onChange();
+    });
+  }
+
+  // Movement: turn buttons. Pointing at one previews the turn; clicking plays it.
+  [[buttons.turn90, 1], [buttons.turn180, 2], [buttons.turn270, 3]].forEach(([button, quarterTurns]) => {
+    const show = () => { view.turnPreview = quarterTurns; onChange(); };
+    const hide = () => { view.turnPreview = null; onChange(); };
+    button.addEventListener("pointerenter", (event) => { if (event.pointerType === "mouse") show(); });
+    button.addEventListener("pointerleave", hide);
+    button.addEventListener("focus", show);
+    button.addEventListener("blur", hide);
+    button.addEventListener("click", () => {
+      const state = getState();
+      const move = turnMove(state, view, legalMovesFor(state), quarterTurns);
+      if (move) play(move);
+    });
+  });
+  buttons.moveCancel.addEventListener("click", cancel);
 
   document.addEventListener("keydown", (event) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;

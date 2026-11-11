@@ -337,11 +337,13 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   - **One action per turn:** the interface only allows one slide, rotate, or flip per turn.
 - `moves.js`: `getLegalMoves(state)` returns every move with no violations. Used by the UI (highlighting) and later by the CPU. Also add `getPossibleMoves(state)` (violations allowed) for later.
 - `input.js`: click a piece, then pick an action:
-  - slide: click a highlighted destination along a line
-  - rotate: click one of the piece's highlighted external corners, then choose 90°, 180°, or 270°
-  - flip: click one of the four highlighted sides
+  - slide: pick the piece up by one square, then click a highlighted square where that square should land (pointing at one shows a ghost)
+  - rotate: press Rotate, click one of the piece's highlighted external corners, then press 90°, 180°, or 270° (hovering previews)
+  - flip: press Flip, then click one of the see-through copies showing where each legal flip would land
   - chip: click a chip, then click a highlighted destination
-- **Streak badge** on any piece moved twice in a row.
+- **Streak badge** ("×2") on any piece moved twice in a row.
+- Landing on a star with a slide, rotation, or flip is a new violation, `star-landing`.
+- Entrapment (all of a player's pieces have no legal move) ends the game as soon as it happens, so the game can already finish in this phase. Phase 5 adds the game-over screen and the other end conditions.
 - Side panel move log (the digital Movement Record Flag Card).
 - `history.js`: save a snapshot of the state before every move (needed by Phase 6).
 - Tests: every violation category, plus entrapment examples such as a piece boxed into a corner by chips.
@@ -355,9 +357,9 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 **Goal:** Games actually end, correctly, and the difficulty scale starts working.
 
 - `game.js`: after every move, check the win conditions:
-  1. **Entrapment:** all 5 of the opponent's pieces have no valid move (reuses `getLegalMoves` filtered by piece)
+  1. **Entrapment:** all 5 of the opponent's pieces have no valid move (already detected in Phase 4; Phase 5 adds the screen)
   2. **Placement:** the opponent cannot place all 5 pieces (from Phase 3)
-  3. **No legal move:** the player to move has nothing legal to do
+  3. **No legal move:** the player to move has nothing legal to do (always the same as entrapment, since every move is a move of a piece or chip)
 - Game-over overlay with the winner and reason; "Play again" and "Back to menu" buttons.
 - Start screen: choose **2 Players** (the CPU option is greyed out until Phase 7), a **difficulty** (three preset buttons: Easy, Medium, Hard), and a color scheme. `bandForLevel` and `BAND_RULES` wire the setting into the rules, but until Phase 6 only Easy behavior is active, so the other bands behave like Easy.
 - `clock.js`:

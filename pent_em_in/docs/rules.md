@@ -160,6 +160,12 @@ An **inappropriate challenge (IA)** is one made at the wrong time, or about a pr
 - Placement is checked by `analyzeMove`: *impossible* (off the board, on a chip or piece) is always refused; *violations* (on a star, sharing an edge with an opponent's piece) are refused on every level until challenges arrive in Phase 6.
 - A player who cannot legally place any unused shape loses immediately.
 
+## Implementation notes: movement
+
+- A piece is moved by `slide`, `rotate`, or `flip`; a chip by `chip`. See `docs/architecture.md` for the move objects.
+- *Impossible* (off the board, landing on a chip or piece) is always refused. *Violations* are `slide-blocked`, `star-landing`, `chip-blocked`, `chip-repeat`, and `piece-repeat`; Easy refuses them, and later phases make them challengeable.
+- A player whose five pieces all have no legal move loses at the start of their turn.
+
 ---
 
 *© Pentathlon Institute, Inc. These rule highlights are for tournament use only.*

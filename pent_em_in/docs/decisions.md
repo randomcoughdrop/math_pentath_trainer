@@ -17,7 +17,7 @@ Rules that the tournament summary (`rules.md`) left open, and what we chose. Add
 | Entrapped | A pentomino is entrapped when it has **no valid move** (no legal slide, rotation, or flip). Chips and all pieces, including the owner's own, count as obstacles. |
 | Win | Entrap all 5 opposing pieces, opponent cannot place all 5, opponent has no legal move, opponent is correctly challenged for moving the same piece three turns in a row, opponent reaches three incorrect challenges, or (Hard) opponent's chess clock runs out. |
 | Tie | The 60-minute game cap is reached with no winner (Easy and Medium). |
-| Rule-breaking categories | Six challengeable categories (see below). Stars and passing over occupied squares are rule-breaking but possible; only off-board or overlapping landings are impossible. |
+| Rule-breaking categories | Seven challengeable categories (see below). Stars and passing over occupied squares are rule-breaking but possible; only off-board or overlapping landings are impossible. |
 | Placement challenge | A correct challenge removes the piece, the challenger places one of the opponent's shapes for them, then takes their own turn. An incorrect one lets the challenged player move one of the challenger's chips. |
 | Chess clock (Hard) | 30 minutes per player, no increment, running out of time loses. The 60-second turn alert still applies. |
 | Difficulty control | Players see only the Easy / Medium / Hard presets. The underlying `level` number (0 to 100) is set in code through `PRESET_LEVELS`. |
@@ -66,6 +66,7 @@ Preset levels (in `constants.js`): Easy = 15, Medium = 50, Hard = 90.
 | `placement-star` | A piece was placed on a star | Placement |
 | `placement-contact` | A piece was placed sharing an edge with an opponent's piece | Placement |
 | `slide-blocked` | A slide passed over a chip, piece, or star | Other |
+| `star-landing` | A slide, rotation, or flip ended with the piece on a star | Other |
 | `chip-blocked` | A chip passed over an occupied square, or passed over or landed on a star | Other |
 | `chip-repeat` | Two chip moves in a row | Other |
 | `piece-repeat` | The same piece moved three turns in a row (chip moves in between don't break the streak) | Three-in-a-row |
@@ -105,3 +106,20 @@ Three incorrect challenges is an automatic loss.
 | Pieces touching own pieces | Allowed; only edge contact with an opponent's piece is a violation. Corner contact is always fine. |
 | Who moves first in the movement phase | The starting player, because turns simply alternate through the ten placements. |
 | Starting player | Random draw (announced in the status line); `?first=1` or `?first=2` overrides it. |
+
+## Phase 4 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Landing on a star by moving a piece | Breaks a rule (`star-landing`, challenge kind "Other"). Rotating or flipping *over* a star is fine; only where the piece ends up counts. |
+| Touching an opponent's piece after moving | Allowed. The edge-contact rule only applies when placing. |
+| Who moves which chips | Each player moves only their own two chips. |
+| Slide input | Pick the piece up by one of its squares; marked squares show where that square can land. Pointing at one shows a ghost of the piece there. |
+| Rotate input | Press Rotate, click a marked corner, then press 90°, 180°, or 270° (always clockwise). Hovering over a button previews the result. |
+| Flip input | Press Flip, then click one of the see-through copies. There is one for each side the piece can legally flip over. |
+| Easy highlighting | Only legal moves are marked or clickable. |
+| Streak counting | Kept per player (`state.repeat`): the piece they last moved and for how many of their own turns in a row. A chip move in between leaves it alone; moving any other piece starts it over at 1. |
+| Streak badge | A "×2" badge sits on a piece its owner has moved twice in a row. |
+| Entrapment | A player whose pieces all have no legal move loses when their turn starts (`winReason: "entrapment"`), including at the very start of the movement phase. A trapped player who still has chip moves counts as trapped. |
+| Piece trays in movement | Hidden once placement is over. |
+| History | A snapshot of the state is saved before every move, placements included. |
