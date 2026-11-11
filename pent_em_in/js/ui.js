@@ -6,10 +6,12 @@ import { movesForPiece, rotateTurns, isPlacingNow, placementOwner } from "./inpu
 import { formatTime } from "./clock.js";
 import { CHALLENGE_CATEGORIES } from "./challenges.js";
 import { challengesEnabled, blocksViolations } from "./rules.js";
+import { controllerOf, cpuToAct, actorNow } from "./players.js";
 
 // "Player 1 (Red)"
 export function playerLabel(state, player) {
-  return "Player " + player + " (" + COLOR_SCHEMES[state.settings.colorScheme][player].name + ")";
+  const color = COLOR_SCHEMES[state.settings.colorScheme][player].name;
+  return (controllerOf(state, player) === "cpu" ? "Computer" : "Player " + player) + " (" + color + ")";
 }
 
 // The sentence shown above the board. Pure: it only builds text.
@@ -22,7 +24,9 @@ export function statusMessage(state, view, preview, legal = []) {
     return title + " " + detail;
   }
 
-  const message = turnMessage(state, view, preview, legal);
+  const message = cpuToAct(state)
+    ? playerLabel(state, actorNow(state)) + " is thinking..."
+    : turnMessage(state, view, preview, legal);
   if (!state.timeCalled) return message;
 
   // The game cap ran out: say how the game will end.

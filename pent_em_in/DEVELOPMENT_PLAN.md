@@ -393,7 +393,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 
 ---
 
-### Phase 7: CPU Foundation and the Difficulty Dial
+### Phase 7: CPU Foundation and the Difficulty Dial ✅ Done
 **Goal:** Single-player mode exists, driven by the unified `level` number, even if the CPU's play is still random.
 
 - `ai/params.js`: `cpuParams(level)` returns `{ randomMoveRate, searchDepth, challengeRate, illegalMoveRate }`. The first two interpolate along the table in "Difficulty Scale"; the last two come from the band (challenge: Easy none, Medium about 0.8, Hard 1.0; illegal-move: Easy 0, Medium about 0.03, Hard 0).

@@ -31,6 +31,7 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/input.js` | Mouse, touch, and keyboard to game actions |
 | `js/ui.js` | Status text, game-over text, clocks display, buttons, move log |
 | `js/menu.js` | The start screen |
+| `js/players.js` | Who is human or CPU, and who the game is waiting on |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
 ## Coordinates
@@ -185,6 +186,12 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 **Pausing** is page-only: `view.paused` stops the clock (`setPaused`) and hides the board and controls, so the position can't be studied while the clocks are stopped.
 
 **The start screen** (`menu.js`) turns radio-button choices into settings (`settingsFromChoices`), and `main.js` `startGame` builds the state and clock from them. "Play again" starts a new game with the same settings; "Back to menu" returns to the start screen.
+
+## Phase 7: The Computer
+
+- `players.js` says who controls each player (`state.settings.players`) and who the game is waiting on (`actorNow`). `input.js`, `challenge-ui.js`, and `ui.js` use `cpuToAct` to ignore clicks and show "thinking" while the computer acts.
+- `ai/` holds the CPU (see [ai.md](ai.md)). It returns moves; `main.js` `scheduleCpu` plays them after a delay through the same `applyMove` a person uses.
+- `copyState` now shares the saved snapshots in `history` instead of cloning them all (they are never changed). Before this, every move got slower as the game went on, which a long CPU game made obvious.
 
 ## Phase 6: Rule-Breaking Moves and Challenges
 

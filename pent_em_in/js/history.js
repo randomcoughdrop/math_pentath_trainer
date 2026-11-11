@@ -21,6 +21,6 @@ export function recordSnapshot(next, before) {
 export function restoreSnapshot(state, index) {
   if (index < 0 || index >= state.history.length) return null;
   const restored = structuredClone(state.history[index]);
-  restored.history = structuredClone(state.history.slice(0, index));
+  restored.history = state.history.slice(0, index); // snapshots are never changed, so they can be shared
   return restored;
 }

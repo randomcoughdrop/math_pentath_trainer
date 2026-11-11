@@ -159,3 +159,15 @@ Three incorrect challenges is an automatic loss.
 |---|---|
 | Stuck pieces | On Easy, the player's own pieces that have no legal move are drawn slightly washed out (grey overlay). Medium and Hard never do this. |
 | Rotate and Flip buttons | On Easy, greyed out when the selected piece has no legal rotation or flip. |
+
+## Phase 7 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Seats | Against the computer you are always Player 1 (Red by default) and the computer is Player 2. "Who goes first" is Random, You, or The computer. |
+| Trying other levels | `?level=0-100` in the address overrides the preset; the rules band and the CPU follow it. |
+| Delay and highlight | The computer waits 500 ms before acting. Its last move is outlined with a dashed yellow line until the person acts. |
+| Locked controls | While the computer acts, board, tray, and challenge controls are ignored. The "Challenge the winning move" button is only shown to a human loser. |
+| Pending choices | The CPU chooses at random for now; Phase 8 may pick sensibly. |
+| Piece choice | When placing, the CPU picks a shape first, then a position, so it isn't biased toward shapes with many positions. |
+| Speed fix | `copyState` shares history snapshots; a 600-move game went from minutes to seconds. |

@@ -18,7 +18,14 @@
       <fieldset>
         <legend>Players</legend>
         <label class="choice"><input type="radio" name="players" value="2" checked> <strong>2 Players</strong> <span>on this screen</span></label>
-        <label class="choice disabled"><input type="radio" name="players" value="cpu" disabled> <strong>Play the computer</strong> <span>coming soon</span></label>
+        <label class="choice"><input type="radio" name="players" value="cpu"> <strong>Play the computer</strong> <span>you are Player 1</span></label>
+      </fieldset>
+
+      <fieldset id="first-choice" hidden>
+        <legend>Who goes first</legend>
+        <label class="choice"><input type="radio" name="first" value="random" checked> <strong>Random draw</strong></label>
+        <label class="choice"><input type="radio" name="first" value="you"> <strong>You</strong></label>
+        <label class="choice"><input type="radio" name="first" value="computer"> <strong>The computer</strong></label>
       </fieldset>
 
       <fieldset>

@@ -28,6 +28,14 @@ function candidatePlacements(state, player) {
   return candidates;
 }
 
+// Every placement that is physically possible (on the board, not on a chip or
+// piece), with its analysis: [{ shape, cells, analysis }]. Some may break rules.
+export function getPossiblePlacements(state, player) {
+  return candidatePlacements(state, player)
+    .map((placement) => ({ ...placement, analysis: analyzePlacement(state, player, placement.cells) }))
+    .filter(({ analysis }) => analysis.possible);
+}
+
 // Every placement that breaks no rule.
 export function getLegalPlacements(state, player) {
   return candidatePlacements(state, player)

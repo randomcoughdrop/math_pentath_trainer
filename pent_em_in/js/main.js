@@ -8,6 +8,9 @@ import { setupInput, computePreview, buildOverlay, clearSelection, playableMoves
 import { playerLabel, statusMessage, updateControls, renderLog, renderClocks, gameOverSummary } from "./ui.js";
 import { setupMenu, selectChoice } from "./menu.js";
 import { setupChallengeUI, renderChallengeUI } from "./challenge-ui.js";
+import { cpuToAct, actorNow } from "./players.js";
+import { cpuParams } from "./ai/params.js";
+import { nextCpuMove } from "./ai/cpu.js";
 
 // --- the page's elements ---
 
@@ -73,6 +76,8 @@ const clockParts = {
 let state = null; // the game (null while the menu is showing)
 let clock = null; // the clocks (not part of the game state)
 let settings = null; // what the menu chose, kept for "Play again"
+let cpu = null; // the computer's settings (from the level), see ai/params.js
+let cpuTimer = null;
 
 // Things that are not part of the game itself: the piece being held, where the
 // cursor is, short messages, and whether the game is paused.
@@ -81,7 +86,7 @@ function resetView() {
   Object.assign(view, {
     held: null, hover: null, notice: "", announce: "",
     selected: null, action: "slide", pivot: null, turnPreview: null,
-    paused: false, challengeOpen: false,
+    paused: false, challengeOpen: false, cpuHighlight: null,
   });
 }
 resetView();
@@ -90,18 +95,25 @@ resetView();
 // ?difficulty=hard to the address. (?first only applies to the first game.)
 const params = new URLSearchParams(window.location.search);
 let firstOverride = ["1", "2"].includes(params.get("first")) ? Number(params.get("first")) : null;
+// ?level=0-100 sets the difficulty dial directly (the buttons only offer three
+// presets); ?players=cpu starts with the computer selected.
+const levelOverride = params.has("level") && Number.isFinite(Number(params.get("level"))) ? Number(params.get("level")) : null;
+selectChoice(menu, "players", params.get("players"));
 selectChoice(menu, "colors", params.get("colors"));
 selectChoice(menu, "difficulty", params.get("difficulty"));
 
 function startGame(chosen) {
-  settings = chosen;
-
   // The digital version of the Game Monitor's hidden-chip draw.
-  const startingPlayer = firstOverride ?? (Math.random() < 0.5 ? 1 : 2);
+  const startingPlayer = firstOverride ?? chosen.firstPlayer ?? (Math.random() < 0.5 ? 1 : 2);
   firstOverride = null;
 
+  if (levelOverride !== null) chosen = { ...chosen, level: Math.min(100, Math.max(0, levelOverride)) };
+  settings = chosen;
   state = createInitialState({ ...chosen, startingPlayer });
   clock = createClock(chosen.level);
+  cpu = cpuParams(chosen.level);
+  clearTimeout(cpuTimer);
+  cpuTimer = null;
   resetView();
   view.announce = "Random draw: " + playerLabel(state, startingPlayer) + " goes first.";
 
@@ -118,6 +130,8 @@ function startGame(chosen) {
 
 function showMenu() {
   state = null;
+  clearTimeout(cpuTimer);
+  cpuTimer = null;
   gameScreen.hidden = true;
   menu.hidden = false;
 }
@@ -135,7 +149,7 @@ function draw() {
   pauseBanner.hidden = !view.paused;
 
   if (!view.paused) {
-    render(board, state, { preview, ...buildOverlay(state, view, legal) });
+    render(board, state, { preview, highlightCells: view.cpuHighlight, ...buildOverlay(state, view, legal) });
     for (const player of [1, 2]) {
       // Only the player whose piece is being placed can hold one.
       renderTray(trays[player], state, player, placementOwner(state) === player ? view.held : null);
@@ -157,12 +171,20 @@ function draw() {
 
   renderChallengeUI(challengeParts, state, view);
   renderClocks(clockParts, state, clock);
+  scheduleCpu();
 }
 
 // --- playing ---
 
-// Called by the input code when a player tries to make a move.
+// Called by the input code when a person tries to make a move.
 function handleMove(move) {
+  if (cpuToAct(state)) return { ok: false, message: "Wait for the computer." };
+  view.cpuHighlight = null;
+  return playMove(move);
+}
+
+// Plays a move for whoever is acting (a person, or the computer below).
+function playMove(move) {
   const result = applyMove(state, move);
   if (result.ok) {
     state = result.state;
@@ -173,6 +195,39 @@ function handleMove(move) {
     startTurn(clock); // the next player's turn timer starts at zero
   }
   return result;
+}
+
+// --- the computer's turns ---
+
+const CPU_DELAY_MS = 500; // so its moves can be followed
+
+// The squares to highlight so you can see what the computer just did.
+function squaresOf(move, after) {
+  if (move.type === "place") return move.cells;
+  if (move.type === "chip" || move.type === "relocate-chip") return [[move.to.row, move.to.col]];
+  const piece = after.pieces.find((candidate) => candidate.id === move.pieceId);
+  return piece ? piece.cells : null;
+}
+
+// If it is the computer's turn to act, wait a moment and then act. Called after
+// every redraw; the timer makes sure only one move is waiting at a time.
+function scheduleCpu() {
+  if (!state || view.paused || cpuTimer !== null || !cpuToAct(state)) return;
+  const waitingOn = state;
+  cpuTimer = setTimeout(() => {
+    cpuTimer = null;
+    if (state !== waitingOn || view.paused) return draw();
+    const move = nextCpuMove(state, cpu);
+    if (move === null) {
+      // Nothing to do (for example, it chooses not to challenge a win). Stop asking.
+      if (state.phase === "gameover") state = { ...state, lastTurn: null };
+      return draw();
+    }
+    const result = playMove(move);
+    view.cpuHighlight = result.ok ? squaresOf(move, state) : null;
+    if (!result.ok) console.error("The computer's move was refused:", move, result.message);
+    draw();
+  }, CPU_DELAY_MS);
 }
 
 setupInput({ board, trays, buttons, view, getState: () => state, onMove: handleMove, onChange: draw });
@@ -209,7 +264,7 @@ function tick() {
     state = callTime(state);
     draw();
   }
-  if (events.turnAlert && soundToggle.checked) beep();
+  if (events.turnAlert && soundToggle.checked && !cpuToAct(state)) beep();
 
   renderClocks(clockParts, state, clock);
 }

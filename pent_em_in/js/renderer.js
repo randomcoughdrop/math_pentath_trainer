@@ -176,6 +176,7 @@ export function drawBoard(ctx, state, layout, extras = {}) {
   drawStartMarkers(ctx, layout, colors);
   drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds);
   drawSelection(ctx, state, layout, extras);
+  drawHighlight(ctx, layout, extras);
   for (const ghost of extras.ghosts ?? []) {
     drawGhost(ctx, state, layout, colors, { cells: ghost.cells, ok: true });
   }
@@ -277,6 +278,17 @@ function drawGhost(ctx, state, { cell }, colors, preview) {
   }
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+// A dashed outline around the squares the computer just played on.
+function drawHighlight(ctx, { cell }, extras) {
+  if (!extras.highlightCells) return;
+  ctx.save();
+  ctx.strokeStyle = BOARD_COLORS.selected;
+  ctx.lineWidth = Math.max(3, cell * 0.08);
+  ctx.setLineDash([cell * 0.15, cell * 0.1]);
+  strokeOuterEdges(ctx, extras.highlightCells, 0, 0, cell);
+  ctx.restore();
 }
 
 // A bright outline around the selected piece, and a ring around the selected chip.

@@ -5,6 +5,7 @@
 import { CHALLENGE_CATEGORIES, STRIKES_TO_LOSE, canChallenge, canChallengeWin } from "./challenges.js";
 import { challengesEnabled } from "./rules.js";
 import { playerLabel, decisionLabel } from "./ui.js";
+import { cpuToAct, humanToAct } from "./players.js";
 
 // Connect the buttons. The list of rules is built once, from CHALLENGE_CATEGORIES.
 //   parts    - the page's elements (see main.js)
@@ -53,7 +54,8 @@ export function setupChallengeUI({ parts, view, onMove, onChange }) {
 // Show or hide each part for the current state.
 export function renderChallengeUI(parts, state, view) {
   const enabled = challengesEnabled(state) && state.phase !== "gameover";
-  const available = canChallenge(state);
+  const locked = cpuToAct(state); // the computer is acting; nothing here is for the person
+  const available = canChallenge(state) && !locked;
 
   parts.bar.hidden = !enabled;
   parts.open.disabled = !available;
@@ -65,7 +67,7 @@ export function renderChallengeUI(parts, state, view) {
   parts.panel.hidden = !view.challengeOpen;
 
   // The choice after a challenge on a movement rule.
-  const choosing = state.pending && state.pending.kind === "choose";
+  const choosing = state.pending && state.pending.kind === "choose" && !locked;
   parts.decision.hidden = !choosing;
   parts.decisionButtons.textContent = "";
   if (choosing) {
@@ -79,5 +81,5 @@ export function renderChallengeUI(parts, state, view) {
   }
 
   // Challenging a declared win, after the game.
-  parts.win.hidden = !canChallengeWin(state);
+  parts.win.hidden = !(canChallengeWin(state) && humanToAct(state));
 }

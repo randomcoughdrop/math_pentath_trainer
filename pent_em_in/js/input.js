@@ -22,6 +22,7 @@ import { rotateAboutVertex, flipOverSide, normalize, slideCells } from "./transf
 import { analyzePlacement, isAllowed } from "./analyze.js";
 import { getAllowedMoves } from "./moves.js";
 import { DIRECTIONS, cellsAfterMove, blocksViolations } from "./rules.js";
+import { cpuToAct } from "./players.js";
 import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "./renderer.js";
 
 // ---------------------------------------------------------------------------
@@ -336,7 +337,7 @@ export function relocationClick(state, view, cell) {
 //   onMove(move)    - tries to play a move; returns { ok, message }
 //   onChange()      - called after anything that needs a redraw
 export function setupInput({ board, trays, buttons, view, getState, onMove, onChange }) {
-  const placing = () => Boolean(getState()) && isPlacingNow(getState());
+  const placing = () => Boolean(getState()) && isPlacingNow(getState()) && !cpuToAct(getState());
 
   function play(move) {
     const result = onMove(move);
@@ -409,7 +410,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   board.addEventListener("pointerup", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const state = getState();
-    if (!state) return;
+    if (!state || cpuToAct(state)) return; // the computer is acting
 
     if (state.pending && state.pending.kind === "move-chip") {
       const move = relocationClick(state, view, squareUnderPointer(event));
@@ -455,7 +456,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     trays[player].addEventListener("pointerup", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       const state = getState();
-      if (!state || !isPlacingNow(state) || placementOwner(state) !== player) return;
+      if (!state || cpuToAct(state) || !isPlacingNow(state) || placementOwner(state) !== player) return;
 
       const rect = trays[player].getBoundingClientRect();
       const index = trayIndexFromPoint(event.clientX - rect.left, event.clientY - rect.top, rect.width);

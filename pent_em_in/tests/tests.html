@@ -37,6 +37,13 @@
     import { canChallenge, challengeWin, canChallengeWin } from "../js/challenges.js";
     import { getAllowedMoves } from "../js/moves.js";
     import { relocationClick } from "../js/input.js";
+    import { cpuParams } from "../js/ai/params.js";
+    import { chooseMove, shouldChallenge, shouldChallengeWin, nextCpuMove } from "../js/ai/cpu.js";
+    import { makeRng } from "../js/ai/random.js";
+    import { playCpuGame } from "../js/ai/simulate.js";
+    import { cpuToAct, humanToAct, actorNow } from "../js/players.js";
+    import { getPossiblePlacements } from "../js/moves.js";
+    import { playerLabel } from "../js/ui.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
     import { statusMessage, describeEntry, gameOverSummary } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
@@ -1317,6 +1324,120 @@
       assert(help.stuckPieceIds.includes(0) && !help.stuckPieceIds.includes(3));
       const medium = { ...boxed, settings: { ...boxed.settings, level: 50 } };
       assert(easyHelpFor(medium, getAllowedMoves(medium)) === null);
+    });
+
+    // ---------------- Phase 7: the computer ----------------
+
+    test("cpuParams follows the difficulty table", () => {
+      const at = (level) => cpuParams(level);
+      assert(at(0).randomMoveRate === 1 && at(0).searchDepth === 0);
+      assert(Math.abs(at(25).randomMoveRate - 0.6) < 1e-9 && at(25).searchDepth === 1);
+      assert(Math.abs(at(50).randomMoveRate - 0.3) < 1e-9 && at(50).searchDepth === 2);
+      assert(at(100).randomMoveRate === 0 && at(100).searchDepth === 4);
+      assert(Math.abs(at(12.5).randomMoveRate - 0.8) < 1e-9, "straight line between rows");
+      assert(at(-5).level === 0 && at(500).level === 100, "clamped");
+    });
+
+    test("cpuParams band behavior: challenges and rule-breaking", () => {
+      const easy = cpuParams(PRESET_LEVELS.easy), medium = cpuParams(PRESET_LEVELS.medium), hard = cpuParams(PRESET_LEVELS.hard);
+      assert(easy.challengeRate === 0 && easy.illegalMoveRate === 0);
+      assert(medium.challengeRate === 0.8 && medium.illegalMoveRate === 0.03);
+      assert(hard.challengeRate === 1 && hard.illegalMoveRate === 0);
+    });
+
+    test("getPossiblePlacements includes rule-breaking placements, never impossible ones", () => {
+      const state = createInitialState({ level: 50 });
+      const all = getPossiblePlacements(state, 1);
+      assert(all.some((p) => p.analysis.violations.includes("placement-star")));
+      assert(all.every((p) => p.analysis.possible));
+    });
+
+    test("the CPU's placements are legal on Easy and Hard, and can break rules on Medium", () => {
+      for (const level of [15, 90]) {
+        const state = createInitialState({ level });
+        for (let seed = 1; seed <= 5; seed++) {
+          const move = chooseMove(state, cpuParams(level), makeRng(seed));
+          assert(analyzePlacement(state, 1, move.cells).legal, "level " + level);
+        }
+      }
+      const medium = createInitialState({ level: 50 });
+      const eager = { ...cpuParams(50), illegalMoveRate: 1 };
+      assert(!analyzePlacement(medium, 1, chooseMove(medium, eager, makeRng(1)).cells).legal);
+    });
+
+    test("the CPU only challenges real rule-breaking, at its challenge rate", () => {
+      const clean = doMove(mediumState(), slide(0, "right", 1));
+      const dirty = afterBadSlide();
+      const always = cpuParams(90), never = { ...always, challengeRate: 0 };
+      assert(shouldChallenge(clean, always, makeRng(1)) === null, "never a false challenge");
+      assert(shouldChallenge(dirty, always, makeRng(1)) === "slide-blocked");
+      assert(shouldChallenge(dirty, never, makeRng(1)) === null);
+      assert(shouldChallenge(mediumState(), always, makeRng(1)) === null, "nothing to challenge yet");
+    });
+
+    test("the CPU answers every kind of pending challenge with an accepted move", () => {
+      const params = cpuParams(50);
+      const states = [
+        doMove(afterBadSlide(), { type: "challenge", category: "slide-blocked" }), // choose (correct)
+        doMove(afterBadSlide(), { type: "challenge", category: "star-landing" }), // choose (incorrect)
+        doMove(placementOnStar(), { type: "challenge", category: "placement-star" }), // place-for
+        doMove(placementOnStar(), { type: "challenge", category: "placement-contact" }), // move-chip
+      ];
+      for (const state of states) {
+        for (let seed = 1; seed <= 3; seed++) {
+          const move = nextCpuMove(state, params, makeRng(seed));
+          assert(applyMove(state, move).ok, state.pending.kind + " " + JSON.stringify(move));
+        }
+      }
+    });
+
+    test("the CPU challenges a win only when the winning move broke a rule", () => {
+      const params = cpuParams(90);
+      const lost = { ...mediumState(), phase: "gameover", winner: 1, winReason: "entrapment",
+        lastTurn: { player: 1, move: slide(0, "down", 2), violations: ["slide-blocked"] } };
+      assert(shouldChallengeWin(lost, params, makeRng(1)));
+      assert(!shouldChallengeWin({ ...lost, lastTurn: { player: 1, move: slide(0, "right", 1), violations: [] } }, params, makeRng(1)));
+    });
+
+    test("who is acting: people, the computer, and labels", () => {
+      const vsCpu = createInitialState({ players: { 1: "human", 2: "cpu" }, startingPlayer: 1 });
+      assert(humanToAct(vsCpu) && !cpuToAct(vsCpu) && actorNow(vsCpu) === 1);
+      const cpuFirst = createInitialState({ players: { 1: "human", 2: "cpu" }, startingPlayer: 2 });
+      assert(cpuToAct(cpuFirst) && !humanToAct(cpuFirst));
+      assert(playerLabel(cpuFirst, 2) === "Computer (Blue)" && playerLabel(cpuFirst, 1) === "Player 1 (Red)");
+      assert(humanToAct(createInitialState()), "two people: always a person");
+      // After a challenge, the chooser acts even if it isn't the player to move.
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "star-landing" });
+      assert(actorNow(c) === c.pending.chooser);
+    });
+
+    test("the menu can start a game against the computer", () => {
+      const cpu = settingsFromChoices("medium", "red-blue", "cpu", "computer");
+      assert(cpu.players[1] === "human" && cpu.players[2] === "cpu" && cpu.firstPlayer === 2);
+      assert(settingsFromChoices("medium", "red-blue", "cpu", "you").firstPlayer === 1);
+      assert(settingsFromChoices("medium", "red-blue", "cpu", "random").firstPlayer === null);
+      const pvp = settingsFromChoices("easy", "red-blue");
+      assert(pvp.players[2] === "human" && pvp.firstPlayer === null);
+    });
+
+    test("CPU vs CPU games run without a refused move at every preset", () => {
+      for (const level of [PRESET_LEVELS.easy, PRESET_LEVELS.medium, PRESET_LEVELS.hard]) {
+        for (const seed of [1, 2]) {
+          const result = playCpuGame({ level, seed, maxSteps: 150 });
+          assert(result.problems.length === 0, "level " + level + " seed " + seed + ": " + JSON.stringify(result.problems));
+          assert(result.steps > 10);
+        }
+      }
+    });
+
+    test("Medium CPUs do break rules and challenge each other", () => {
+      let broke = 0, challenged = 0;
+      for (let seed = 1; seed <= 6; seed++) {
+        const { state } = playCpuGame({ level: 50, seed, maxSteps: 300, cpuLevels: { 1: 50, 2: 50 } });
+        for (const entry of state.moveLog) if (entry.type === "challenge") challenged++;
+        broke += state.moveLog.length > 0 ? 1 : 0;
+      }
+      assert(challenged > 0, "some challenge happened");
     });
 
     document.getElementById("summary").textContent =

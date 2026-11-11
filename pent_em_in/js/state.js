@@ -14,6 +14,7 @@ export function createInitialState(options = {}) {
     settings: {
       level: options.level ?? PRESET_LEVELS.easy,
       colorScheme: options.colorScheme ?? "red-blue",
+      players: options.players ?? { 1: "human", 2: "human" }, // each "human" or "cpu"
     },
     pieces: [],
     nextPieceId: 0,
@@ -42,6 +43,11 @@ export function otherPlayer(player) {
 }
 
 // A full independent copy, so a move can build the next state without touching the old one.
+// The saved snapshots in `history` are never changed once made, so the copy shares
+// them (in a new list) instead of cloning every one: that keeps long games fast.
 export function copyState(state) {
-  return structuredClone(state);
+  const { history, ...rest } = state;
+  const copy = structuredClone(rest);
+  copy.history = [...history];
+  return copy;
 }
