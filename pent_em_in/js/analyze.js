@@ -24,6 +24,7 @@ export const MESSAGES = {
   "star-landing": "A piece can't land on a star.",
   "chip-blocked": "A chip can't pass over a piece, a chip, or a star, or land on a star.",
   "chip-repeat": "You can't move a chip two turns in a row.",
+  mustMovePiece: "You have to move a pentomino this turn, not a chip.",
   "piece-repeat": "You can't move the same piece three turns in a row.",
 };
 
@@ -117,6 +118,7 @@ export function analyzePieceMove(state, player, move) {
 export function analyzeChipMove(state, player, move) {
   const chip = state.chips.find((candidate) => candidate.id === move.chipId);
   if (!chip || chip.owner !== player) return invalid(MESSAGES.notYours);
+  if (state.mustMovePiece) return invalid(MESSAGES.mustMovePiece);
 
   const to = move.to;
   if (!to || !Number.isInteger(to.row) || !Number.isInteger(to.col)) return invalid(MESSAGES.badMove);

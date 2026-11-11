@@ -4,7 +4,7 @@
 import { COLS, ROWS } from "./constants.js";
 import { getShapeCells } from "./pieces.js";
 import { orientations, slideCells, externalCorners, SIDES } from "./transforms.js";
-import { analyzePlacement, analyzeMove } from "./analyze.js";
+import { analyzePlacement, analyzeMove, isAllowed } from "./analyze.js";
 import { isOnBoard, DIRECTIONS, CHIP_DIRECTIONS } from "./rules.js";
 
 // Every way to lay one of the player's unused shapes fully on the board,
@@ -96,6 +96,15 @@ export function getPossibleMoves(state) {
 export function getLegalMoves(state) {
   return getPossibleMoves(state)
     .filter(({ analysis }) => analysis.legal)
+    .map(({ move }) => move);
+}
+
+// Every move the current player may actually make. On Easy that is the legal
+// moves. On Medium and Hard it is every possible move, rule-breaking ones
+// included, since those can be challenged but not refused.
+export function getAllowedMoves(state) {
+  return getPossibleMoves(state)
+    .filter(({ analysis }) => isAllowed(state, analysis))
     .map(({ move }) => move);
 }
 

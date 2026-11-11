@@ -32,8 +32,11 @@
     import {
       newHeldPiece, rotateHeld, flipHeld, cellsAt, computePreview,
       slideTargets, rotateCorners, flipChoices, chipTargets, movementClick, turnMove,
-      chooseAction, clearSelection, buildOverlay,
+      chooseAction, clearSelection, buildOverlay, easyHelpFor,
     } from "../js/input.js";
+    import { canChallenge, challengeWin, canChallengeWin } from "../js/challenges.js";
+    import { getAllowedMoves } from "../js/moves.js";
+    import { relocationClick } from "../js/input.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
     import { statusMessage, describeEntry, gameOverSummary } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
@@ -1146,6 +1149,174 @@
       assert(statusMessage(state, none, null).includes("piece 1 of 5"));
       const view = { ...none, held: newHeldPiece("I") };
       assert(statusMessage(state, view, { ok: false, message: "Nope." }).includes("Nope."));
+    });
+
+
+    // ---------------- Phase 6: challenges ----------------
+
+    // A Medium (level 50) movement state: Player 1's I on row 1, Player 2's far away.
+    function mediumState(extra = {}) {
+      return {
+        ...createInitialState({ level: 50 }), phase: "movement", chips: CHIPS_OUT_OF_THE_WAY,
+        pieces: [piece(0, 1, horizontalI(1, 0)), piece(2, 1, horizontalI(8, 0)),
+                 piece(1, 2, horizontalI(8, 8)), piece(3, 2, verticalI(0, 12))],
+        ...extra,
+      };
+    }
+    const doMove = (state, move) => { const r = applyMove(state, move); assert(r.ok, r.message); return r.state; };
+    // Player 1 slides over a star: breaks "slide-blocked".
+    const afterBadSlide = () => doMove(mediumState(), slide(0, "down", 2));
+
+    test("Easy refuses rule-breaking moves; Medium and Hard accept them", () => {
+      for (const [level, ok] of [[15, false], [50, true], [90, true]]) {
+        const state = { ...mediumState(), settings: { ...mediumState().settings, level } };
+        assert(applyMove(state, slide(0, "down", 2)).ok === ok, "level " + level);
+      }
+    });
+
+    test("an unchallenged rule-breaking move stands", () => {
+      const state = afterBadSlide();
+      assert(state.lastTurn.violations.includes("slide-blocked"));
+      assert(state.pieces[0].cells[0][0] === 3);
+      assert(canChallenge(state) && state.currentPlayer === 2);
+      assert(!canChallenge({ ...state, settings: { ...state.settings, level: 15 } }), "no challenges on Easy");
+      assert(!canChallenge(mediumState()), "nothing to challenge yet");
+    });
+
+    test("a correct challenge restores the board and offers a choice", () => {
+      const before = mediumState();
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "slide-blocked" });
+      assert(JSON.stringify(c.pieces) === JSON.stringify(before.pieces), "piece is back");
+      assert(c.pending.kind === "choose" && c.pending.chooser === 2);
+      assert(c.strikes[2] === 0);
+      const take = doMove(c, { type: "decide", choice: "take-turn" });
+      assert(take.currentPlayer === 2 && !take.mustMovePiece && take.pending === null);
+      const force = doMove(c, { type: "decide", choice: "force-move" });
+      assert(force.currentPlayer === 1 && force.mustMovePiece);
+      assert(!applyMove(force, chipMove(0, 6, 5)).ok, "a chip move isn't allowed when a piece must move");
+      assert(applyMove(force, slide(0, "right", 1)).ok);
+    });
+
+    test("an incorrect challenge is a strike and the move stands", () => {
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "star-landing" });
+      assert(c.strikes[2] === 1 && c.pieces[0].cells[0][0] === 3);
+      assert(c.pending.kind === "choose" && c.pending.chooser === 1);
+      assert(JSON.stringify(c.pending.options) === JSON.stringify(["lose-turn", "force-move"]));
+      assert(doMove(c, { type: "decide", choice: "lose-turn" }).currentPlayer === 1);
+      const forced = doMove(c, { type: "decide", choice: "force-move" });
+      assert(forced.currentPlayer === 2 && forced.mustMovePiece);
+    });
+
+    test("three incorrect challenges lose the game", () => {
+      let state = afterBadSlide();
+      state = { ...state, strikes: { 1: 0, 2: 2 } };
+      const end = doMove(state, { type: "challenge", category: "chip-repeat" });
+      assert(end.phase === "gameover" && end.winner === 1 && end.winReason === "strikes");
+    });
+
+    test("only one challenge per turn, and none while a decision is pending", () => {
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "slide-blocked" });
+      assert(!canChallenge(c));
+      assert(!applyMove(c, { type: "challenge", category: "slide-blocked" }).ok);
+      assert(!applyMove(c, slide(2, "right", 1)).ok, "must decide first");
+    });
+
+    test("three in a row: a correct challenge wins on the spot", () => {
+      let state = mediumState();
+      const go = (m) => { state = doMove(state, m); };
+      go(slide(0, "right", 1)); go(slide(1, "left", 1));
+      go(slide(0, "left", 1)); go(slide(1, "right", 1));
+      go(slide(0, "right", 1)); // Player 1's third turn in a row with the same piece
+      assert(state.lastTurn.violations.includes("piece-repeat"));
+      const win = doMove(state, { type: "challenge", category: "piece-repeat" });
+      assert(win.phase === "gameover" && win.winner === 2 && win.winReason === "three-in-a-row");
+    });
+
+    test("getAllowedMoves lets rule-breaking moves through on Medium only", () => {
+      const medium = mediumState();
+      const easy = { ...medium, settings: { ...medium.settings, level: 15 } };
+      assert(getAllowedMoves(medium).length > getAllowedMoves(easy).length);
+      assert(getAllowedMoves(medium).length === getPossibleMoves(medium).length);
+    });
+
+    test("a challenge's words appear in the log", () => {
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "slide-blocked" });
+      assert(describeEntry(c, c.moveLog[c.moveLog.length - 1]).toLowerCase().includes("challenge"));
+    });
+
+    // Placement challenges: Player 1 puts a piece on a star on Medium.
+    function placementOnStar() {
+      const state = createInitialState({ level: 50, startingPlayer: 1 });
+      return doMove(state, { type: "place", shape: "I", cells: horizontalI(2, 0) });
+    }
+
+    test("a correct placement challenge makes the challenger place for the offender", () => {
+      const state = placementOnStar();
+      assert(state.lastTurn.violations.includes("placement-star"));
+      const c = doMove(state, { type: "challenge", category: "placement-star" });
+      assert(c.pieces.length === 0 && c.unusedShapes[1].includes("I"), "piece goes back to the pool");
+      assert(c.pending.kind === "place-for" && c.pending.chooser === 2);
+      assert(!applyMove(c, { type: "place", shape: "I", cells: horizontalI(2, 0) }).ok, "star placement refused");
+      const placed = doMove(c, { type: "place", shape: "I", cells: horizontalI(0, 0) });
+      assert(placed.pieces.length === 1 && placed.pieces[0].owner === 1);
+      assert(placed.currentPlayer === 2 && placed.pending === null);
+    });
+
+    test("an incorrect placement challenge lets the offender move a chip", () => {
+      const c = doMove(placementOnStar(), { type: "challenge", category: "placement-contact" });
+      assert(c.strikes[2] === 1 && c.pending.kind === "move-chip" && c.pending.chooser === 1);
+      const chip = c.chips.find((x) => x.owner === 2);
+      assert(!applyMove(c, { type: "relocate-chip", chipId: chip.id, to: { row: 2, col: 2 } }).ok, "not onto a star");
+      assert(!applyMove(c, { type: "relocate-chip", chipId: 0, to: { row: 0, col: 0 } }).ok, "not the offender's own chip");
+      const done = doMove(c, { type: "relocate-chip", chipId: chip.id, to: { row: 0, col: 0 } });
+      assert(done.pending === null && done.currentPlayer === 2);
+      const moved = done.chips.find((x) => x.id === chip.id);
+      assert(moved.row === 0 && moved.col === 0);
+    });
+
+    test("challenging a declared win: correct when the last move broke a rule", () => {
+      const lost = { ...mediumState(), phase: "gameover", winner: 1, winReason: "entrapment",
+        lastTurn: { player: 1, move: slide(0, "down", 2), violations: ["slide-blocked"] } };
+      assert(canChallengeWin(lost));
+      const r = challengeWin(lost);
+      assert(r.ok && r.state.winner === 2 && r.state.winReason === "declared-win" && r.state.winChallenged);
+      assert(!canChallengeWin(r.state), "only once");
+      const clean = { ...lost, lastTurn: { player: 1, move: slide(0, "right", 1), violations: [] } };
+      const r2 = challengeWin(clean);
+      assert(r2.ok && r2.state.winner === 1 && r2.state.winChallenged);
+      assert(!canChallengeWin({ ...lost, winReason: "time" }));
+    });
+
+    test("relocationClick picks a chip then a square", () => {
+      const c = doMove(placementOnStar(), { type: "challenge", category: "placement-contact" });
+      const view = { selected: null, notice: "" };
+      const own = c.chips.find((x) => x.owner === 1);
+      const theirs = c.chips.find((x) => x.owner === 2);
+      assert(relocationClick(c, view, { row: own.row, col: own.col }) === null && view.notice !== "", "offender's own chip");
+      assert(relocationClick(c, view, { row: 0, col: 0 }) === null, "square before chip");
+      assert(relocationClick(c, view, { row: theirs.row, col: theirs.col }) === null && view.selected.id === theirs.id);
+      const move = relocationClick(c, view, { row: 0, col: 0 });
+      assert(move.type === "relocate-chip" && move.chipId === theirs.id);
+    });
+
+    test("summaries for the new endings", () => {
+      for (const reason of ["strikes", "three-in-a-row", "declared-win"]) {
+        const { title, detail } = gameOverSummary({ ...mediumState(), phase: "gameover", winner: 1, winReason: reason });
+        assert(title.length > 0 && detail.length > 0, reason);
+      }
+    });
+
+    test("Easy dims pieces with no legal move; Medium does not", () => {
+      // Player 1's I is boxed in the top-left corner by Player 2's pieces and chips.
+      const boxed = movementState([
+        piece(0, 1, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]),
+        piece(1, 2, verticalI(0, 1)), piece(2, 2, [[5, 0], [5, 1], [5, 2], [5, 3], [5, 4]]),
+        piece(3, 1, horizontalI(8, 5)),
+      ], { chips: CHIPS_OUT_OF_THE_WAY });
+      const help = easyHelpFor(boxed, getAllowedMoves(boxed));
+      assert(help.stuckPieceIds.includes(0) && !help.stuckPieceIds.includes(3));
+      const medium = { ...boxed, settings: { ...boxed.settings, level: 50 } };
+      assert(easyHelpFor(medium, getAllowedMoves(medium)) === null);
     });
 
     document.getElementById("summary").textContent =

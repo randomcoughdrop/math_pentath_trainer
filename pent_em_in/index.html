@@ -26,9 +26,9 @@
         <label class="choice"><input type="radio" name="difficulty" value="easy" checked> <strong>Easy</strong>
           <span>Rule-breaking moves are blocked. 60-minute game limit, no turn timer.</span></label>
         <label class="choice"><input type="radio" name="difficulty" value="medium"> <strong>Medium</strong>
-          <span>60-minute game limit and a reminder after 60 seconds on a turn. Rule-breaking moves and challenges arrive in a later update.</span></label>
+          <span>60-minute game limit and a reminder after 60 seconds on a turn. Rule-breaking moves are allowed, but your opponent can challenge them.</span></label>
         <label class="choice"><input type="radio" name="difficulty" value="hard"> <strong>Hard</strong>
-          <span>A 30-minute chess clock for each player and a reminder after 60 seconds on a turn. Rule-breaking moves and challenges arrive in a later update.</span></label>
+          <span>A 30-minute chess clock for each player and a reminder after 60 seconds on a turn. Rule-breaking moves are allowed, but your opponent can challenge them.</span></label>
       </fieldset>
 
       <fieldset>
@@ -51,6 +51,10 @@
       <p id="gameover-detail"></p>
       <button type="button" id="btn-play-again">Play again</button>
       <button type="button" id="btn-back-to-menu">Back to menu</button>
+      <p id="gameover-challenge" class="win-challenge" hidden>
+        <button type="button" id="btn-challenge-win">Challenge the winning move</button>
+        If the last move broke a rule, you win instead. Otherwise the win stands.
+      </p>
     </section>
 
     <!-- The clocks -->
@@ -71,6 +75,22 @@
     </section>
 
     <div id="game-view">
+      <!-- Challenges (Medium and Hard) -->
+      <div class="challenge-bar" id="challenge-bar" hidden>
+        <button type="button" id="btn-challenge" title="Challenge the opponent's last turn, before you move">Challenge last turn</button>
+        <span id="strikes"></span>
+      </div>
+
+      <section class="panel" id="challenge-panel" hidden>
+        <h2>Which rule did the last turn break?</h2>
+        <div class="choice-buttons" id="challenge-list"></div>
+        <button type="button" id="btn-challenge-cancel">Never mind</button>
+      </section>
+
+      <section class="panel" id="decision-panel" hidden>
+        <div class="choice-buttons" id="decision-buttons"></div>
+      </section>
+
       <!-- Placement phase controls -->
       <div class="controls" id="placement-controls">
         <button type="button" id="btn-rotate-left" title="Rotate counterclockwise (Shift+R)">&#8634; Rotate left</button>

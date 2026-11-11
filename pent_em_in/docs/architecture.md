@@ -23,6 +23,8 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/analyze.js` | `analyzeMove()`: possible? which rules broken? |
 | `js/moves.js` | Generates legal moves |
 | `js/challenges.js` | Challenge categories, outcomes, strikes |
+| `js/turn.js` | After-move checks: placement forfeit, entrapment, stuck player |
+| `js/challenge-ui.js` | The Challenge button, rule list, choice buttons, strike counter |
 | `js/game.js` | Turn flow, phases, win detection |
 | `js/clock.js` | Game cap, chess clock, turn alert, pause (pure; told how much time passed) |
 | `js/renderer.js` | Draws the state to the canvas |
@@ -127,7 +129,7 @@ Flipping over a side and then back over the opposite side returns the piece to w
 
 **Logic (no drawing, no page):**
 - `rules.js`: small checks (on the board? a star? touching an opponent piece along an edge?).
-- `analyze.js`: `analyzeMove` reports `{ possible, violations, legal, message }`. *Possible* means on the board and not overlapping a chip or piece; *violations* are rule breaks (`placement-star`, `placement-contact`). `isAllowed` decides what the current difficulty permits; until Phase 6 every level refuses violations.
+- `analyze.js`: `analyzeMove` reports `{ possible, violations, legal, message }`. *Possible* means on the board and not overlapping a chip or piece; *violations* are rule breaks (`placement-star`, `placement-contact`). `isAllowed` decides what the current difficulty permits; Easy refuses violations, Medium and Hard accept them (Phase 6).
 - `moves.js`: lists every legal placement for a player (unused shapes × orientations × positions).
 - `game.js`: `applyMove(state, move)` returns `{ ok: true, state }` with a new state or `{ ok: false, message }`. It never edits the state it is given. After each placement it passes the turn. When both players have placed 5 pieces the phase becomes `"movement"` (the starting player moves first); if the next player has no legal placement, the phase becomes `"gameover"` and the other player wins (`winReason: "placement"`).
 
@@ -184,8 +186,17 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 
 **The start screen** (`menu.js`) turns radio-button choices into settings (`settingsFromChoices`), and `main.js` `startGame` builds the state and clock from them. "Play again" starts a new game with the same settings; "Back to menu" returns to the start screen.
 
-Until Phase 6, Medium and Hard enforce the rules exactly like Easy (`blocksViolations` still returns true); only their clocks differ.
+## Phase 6: Rule-Breaking Moves and Challenges
 
-## To Be Written
-
-- Phase 6: challenge procedure
+- `rules.js`: `bandRulesFor(state)` reads `BAND_RULES`; `blocksViolations` is true only on Easy; `challengesEnabled` is true on Medium and Hard. Impossible moves (off the board, overlaps) are always refused.
+- `moves.js`: `getAllowedMoves` is what the player may attempt at this level (every possible move on Medium and Hard, only legal ones on Easy). `getLegalMoves` is still the strictly legal set, used for entrapment checks.
+- Every accepted move stores `state.lastTurn = { player, move, violations }`.
+- `challenges.js` is a small state machine. `challenge()` either ends the game (three in a row, three strikes) or sets `state.pending`:
+  - `choose` (after a movement rule): the chooser picks from `options` via a `decide` move.
+  - `place-for` (correct placement challenge): the challenger places one of the offender's shapes with a normal `place` move.
+  - `move-chip` (incorrect placement challenge): the challenged player moves one of the challenger's chips with `relocate-chip`.
+  While `pending` is set, `applyMove` accepts only the matching move type. `restoreBeforeLastMove` uses `history.js` but keeps the strikes, the log, and the time-called flags.
+- `mustMovePiece` is set by a "force a pentomino move" choice; chip moves are refused until a piece moves.
+- `challengeWin` handles the once-only challenge of a forfeit or entrapment win.
+- `turn.js` holds the forfeit, entrapment, and stuck-player checks that run after any turn change.
+- UI: `challenge-ui.js` shows and hides the parts; `input.js` `placementOwner` says whose tray is active (the challenger while placing for the opponent) and `relocationClick` handles picking a chip then a square.

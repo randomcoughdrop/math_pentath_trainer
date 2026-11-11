@@ -2,8 +2,10 @@
 
 import { COLOR_SCHEMES, PIECES_PER_PLAYER } from "./constants.js";
 import { otherPlayer } from "./state.js";
-import { movesForPiece, rotateTurns } from "./input.js";
+import { movesForPiece, rotateTurns, isPlacingNow, placementOwner } from "./input.js";
 import { formatTime } from "./clock.js";
+import { CHALLENGE_CATEGORIES } from "./challenges.js";
+import { challengesEnabled, blocksViolations } from "./rules.js";
 
 // "Player 1 (Red)"
 export function playerLabel(state, player) {
@@ -28,10 +30,17 @@ export function statusMessage(state, view, preview, legal = []) {
 }
 
 function turnMessage(state, view, preview, legal) {
+  if (state.pending && state.pending.kind !== "place-for") return pendingMessage(state, view);
   if (state.phase === "movement") return movementMessage(state, view, legal);
 
-  const player = state.currentPlayer;
-  const who = playerLabel(state, player);
+  // Placing a piece: your own, or (after a correct challenge) one for the opponent.
+  const player = placementOwner(state);
+  const placer = state.pending ? state.pending.chooser : player;
+  const who = playerLabel(state, placer);
+  if (state.pending && !view.held) {
+    return who + ": your challenge was correct. Choose one of " + playerLabel(state, player) +
+      "'s pieces from their tray and place it for them, without breaking a rule.";
+  }
   let message;
 
   if (!view.held) {
@@ -64,16 +73,56 @@ export function gameOverSummary(state) {
   const loser = otherPlayer(state.winner);
   const title = playerLabel(state, state.winner) + " wins!";
 
+  const stands = state.winChallenged ? " The challenge to the win was incorrect, so it stands." : "";
   if (state.winReason === "placement") {
-    return { title, detail: playerLabel(state, loser) + " can't place any more pieces." };
+    return { title, detail: playerLabel(state, loser) + " can't place any more pieces." + stands };
   }
   if (state.winReason === "entrapment") {
-    return { title, detail: "All of " + playerLabel(state, loser) + "'s pieces are trapped." };
+    return { title, detail: "All of " + playerLabel(state, loser) + "'s pieces are trapped." + stands };
   }
   if (state.winReason === "time") {
     return { title, detail: playerLabel(state, loser) + " ran out of time on their clock." };
   }
+  if (state.winReason === "strikes") {
+    return { title, detail: playerLabel(state, loser) + " made three incorrect challenges." };
+  }
+  if (state.winReason === "three-in-a-row") {
+    return { title, detail: playerLabel(state, loser) + " moved the same piece three turns in a row, and " + playerLabel(state, state.winner) + " challenged it." };
+  }
+  if (state.winReason === "declared-win") {
+    return { title, detail: playerLabel(state, loser) + "'s winning move broke a rule, and " + playerLabel(state, state.winner) + " challenged it correctly." };
+  }
   return { title, detail: "" };
+}
+
+// The prompt while a challenge waits for someone's choice (not the placing step).
+function pendingMessage(state, view) {
+  const pending = state.pending;
+  const chooser = playerLabel(state, pending.chooser);
+  let message;
+
+  if (pending.kind === "move-chip") {
+    message = playerLabel(state, pending.challenger) + "'s challenge was incorrect (strike " + state.strikes[pending.challenger] +
+      " of 3). " + chooser + ": move one of " + playerLabel(state, pending.challenger) +
+      "'s chips to a new empty square. Click the chip, then the square.";
+  } else if (pending.outcome === "correct") {
+    message = playerLabel(state, pending.challenger) + "'s challenge was correct, and the move was undone. " + chooser + ": choose what happens next.";
+  } else {
+    message = playerLabel(state, pending.challenger) + "'s challenge was incorrect (strike " + state.strikes[pending.challenger] +
+      " of 3). " + chooser + ": choose what happens next.";
+  }
+
+  return view.notice ? view.notice + " " + message : message;
+}
+
+// The words on a button for one of the choices after a challenge.
+export function decisionLabel(state, choice) {
+  const { challenger, offender } = state.pending;
+  if (choice === "take-turn") return "Take my turn";
+  if (choice === "lose-turn") return "Make " + playerLabel(state, challenger) + " lose the turn";
+  // "force-move": whoever has to move depends on how the challenge came out.
+  const forced = state.pending.outcome === "correct" ? offender : challenger;
+  return "Make " + playerLabel(state, forced) + " move a pentomino";
 }
 
 function movementMessage(state, view, legal) {
@@ -104,7 +153,9 @@ function movementMessage(state, view, legal) {
 
     const streak = state.repeat[state.currentPlayer];
     if (streak.pieceId === piece.id && streak.count >= 2) {
-      message += " (It has moved twice in a row, so it has to stay put this turn.)";
+      message += challengesEnabled(state)
+        ? " (It has moved twice in a row. Moving it again breaks the three-in-a-row rule.)"
+        : " (It has moved twice in a row, so it has to stay put this turn.)";
     }
   }
 
@@ -121,12 +172,33 @@ function movementMessage(state, view, legal) {
 export function describeEntry(state, entry) {
   const who = playerLabel(state, entry.player);
 
+  if (entry.type === "place" && entry.placedBy) {
+    return playerLabel(state, entry.placedBy) + " placed the " + entry.shape + " for " + who + ".";
+  }
   if (entry.type === "place") return who + " placed the " + entry.shape + ".";
   if (entry.type === "slide") return who + " slid the " + entry.shape + " " + entry.direction + " " + entry.distance + ".";
   if (entry.type === "flip") return who + " flipped the " + entry.shape + " over its " + entry.side + " side.";
   if (entry.type === "rotate") {
     return who + " rotated the " + entry.shape + " " + entry.quarterTurns * 90 + "° clockwise around the " +
       cornerName(entry.from, entry.pivot) + ".";
+  }
+  if (entry.type === "challenge") {
+    const rule = CHALLENGE_CATEGORIES.find((category) => category.id === entry.category).label.toLowerCase();
+    return who + " challenged: " + rule + ". " +
+      (entry.correct ? "Correct (C)." : "Incorrect (I), strike " + entry.strike + " of 3.");
+  }
+  if (entry.type === "decision") {
+    const other = playerLabel(state, entry.player === entry.challenger ? entry.offender : entry.challenger);
+    if (entry.choice === "take-turn") return who + " chose to take a turn.";
+    if (entry.choice === "lose-turn") return who + " made " + other + " lose the turn.";
+    return who + " made " + (entry.outcome === "correct" ? playerLabel(state, entry.offender) : playerLabel(state, entry.challenger)) + " move a pentomino.";
+  }
+  if (entry.type === "relocate-chip") {
+    return who + " moved a chip from row " + (entry.from.row + 1) + ", col " + (entry.from.col + 1) +
+      " to row " + (entry.to.row + 1) + ", col " + (entry.to.col + 1) + ".";
+  }
+  if (entry.type === "challenge-win") {
+    return who + " challenged the win. " + (entry.correct ? "Correct (C): the winning move broke a rule." : "Incorrect (I): the win stands.");
   }
   if (entry.type === "chip") {
     return who + " moved a chip from row " + (entry.from.row + 1) + ", col " + (entry.from.col + 1) +
@@ -172,8 +244,8 @@ export function renderLog(list, state) {
 //   panels    - { placement, movement, trays } the containers to show or hide
 //   trayBoxes - { 1: element, 2: element } the containers around each tray
 export function updateControls(state, view, preview, legal, buttons, panels, trayBoxes) {
-  const placing = state.phase === "placement";
-  const moving = state.phase === "movement";
+  const placing = isPlacingNow(state);
+  const moving = state.phase === "movement" && !state.pending;
 
   panels.placement.hidden = !placing;
   panels.movement.hidden = !moving;
@@ -191,8 +263,11 @@ export function updateControls(state, view, preview, legal, buttons, panels, tra
   const selected = moving ? view.selected : null;
   const pieceSelected = Boolean(selected && selected.kind === "piece");
   buttons.slideAction.disabled = !pieceSelected;
-  buttons.rotateAction.disabled = !pieceSelected;
-  buttons.flipAction.disabled = !pieceSelected;
+  // On Easy, rotate and flip are greyed out when the piece has no legal turn or flip.
+  const easy = blocksViolations(state);
+  const canDo = (type) => !easy || legal.some((move) => move.pieceId === selected.id && move.type === type);
+  buttons.rotateAction.disabled = !pieceSelected || !canDo("rotate");
+  buttons.flipAction.disabled = !pieceSelected || !canDo("flip");
   buttons.slideAction.classList.toggle("active", pieceSelected && view.action === "slide");
   buttons.rotateAction.classList.toggle("active", pieceSelected && view.action === "rotate");
   buttons.flipAction.classList.toggle("active", pieceSelected && view.action === "flip");
@@ -204,7 +279,7 @@ export function updateControls(state, view, preview, legal, buttons, panels, tra
   buttons.moveCancel.disabled = !selected;
 
   for (const player of [1, 2]) {
-    trayBoxes[player].classList.toggle("active", placing && state.currentPlayer === player);
+    trayBoxes[player].classList.toggle("active", placing && placementOwner(state) === player);
   }
 }
 

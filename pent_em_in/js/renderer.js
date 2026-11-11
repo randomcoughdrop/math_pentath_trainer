@@ -174,7 +174,7 @@ export function drawBoard(ctx, state, layout, extras = {}) {
   drawGridLines(ctx, layout, COLS, ROWS, 1);
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
-  drawPieces(ctx, state, layout, colors);
+  drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds);
   drawSelection(ctx, state, layout, extras);
   for (const ghost of extras.ghosts ?? []) {
     drawGhost(ctx, state, layout, colors, { cells: ghost.cells, ok: true });
@@ -241,9 +241,15 @@ function drawStartMarkers(ctx, { cell }, colors) {
 }
 
 // Pieces placed on the board. Their cells are in board coordinates.
-function drawPieces(ctx, state, { cell }, colors) {
+function drawPieces(ctx, state, { cell }, colors, dimmed = []) {
   for (const piece of state.pieces) {
     drawCells(ctx, piece.cells, 0, 0, cell, colors[piece.owner]);
+    // Easy only: a piece with no legal move is slightly washed out.
+    if (dimmed.includes(piece.id)) {
+      ctx.globalAlpha = 0.4;
+      drawCells(ctx, piece.cells, 0, 0, cell, BLOCKED_LOOK);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -254,7 +260,7 @@ function drawGhost(ctx, state, { cell }, colors, preview) {
 
   if (preview.ok) {
     ctx.globalAlpha = 0.6;
-    drawCells(ctx, preview.cells, 0, 0, cell, colors[state.currentPlayer]);
+    drawCells(ctx, preview.cells, 0, 0, cell, colors[preview.owner ?? state.currentPlayer]);
     ctx.globalAlpha = 1;
     return;
   }

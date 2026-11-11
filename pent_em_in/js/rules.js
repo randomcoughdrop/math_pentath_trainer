@@ -1,6 +1,6 @@
 // Small, single-purpose rule checks (pure logic, no drawing).
 
-import { COLS, ROWS, STARS } from "./constants.js";
+import { COLS, ROWS, STARS, BAND_RULES, bandForLevel } from "./constants.js";
 import { SIDES, slideCells, rotateAboutVertex, flipOverSide, externalCorners } from "./transforms.js";
 
 // The four directions a piece can slide: [row change, column change].
@@ -89,9 +89,18 @@ export function touchesOpponentPiece(state, cells, player) {
       .some(([nextRow, nextCol]) => theirs.has(squareKey(nextRow, nextCol))));
 }
 
+// The rules that apply at this game's difficulty (see BAND_RULES in constants.js).
+export function bandRulesFor(state) {
+  return BAND_RULES[bandForLevel(state.settings.level)];
+}
+
 // Should a rule-breaking move be refused outright? Easy says yes. Medium and
-// Hard will say no (Phase 6 reads the difficulty here). Until then every level
-// refuses them.
+// Hard let it through, and the opponent has to challenge it.
 export function blocksViolations(state) {
-  return true;
+  return bandRulesFor(state).blockViolations;
+}
+
+// Can players challenge each other's moves in this game? (Medium and Hard.)
+export function challengesEnabled(state) {
+  return bandRulesFor(state).challenges;
 }

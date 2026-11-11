@@ -176,3 +176,9 @@ An **inappropriate challenge (IA)** is one made at the wrong time, or about a pr
 ---
 
 *© Pentathlon Institute, Inc. These rule highlights are for tournament use only.*
+
+## Implementation notes: challenges
+
+- Medium and Hard accept any possible move and record which rules it broke. The opponent may challenge once, before moving; the outcomes follow the "Challenge Outcomes" table in `decisions.md`.
+- Three incorrect challenges lose the game. Moving the same piece three turns in a row is only punished if challenged, and a correct challenge wins on the spot.
+- A forfeit or entrapment win can be challenged once by the loser.

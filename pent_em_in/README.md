@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 5 (a complete two-player game on one screen: start screen, placement, movement, clocks, and a game-over screen). Medium and Hard currently enforce the rules like Easy; challenges arrive in Phase 6, and the computer opponent after that. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 6 (a complete two-player game on one screen: start screen, placement, movement, clocks, rule-breaking moves and challenges on Medium and Hard, and a game-over screen). The computer opponent comes next. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 
@@ -62,6 +62,15 @@ One setting (Easy, Medium, or Hard) controls how strictly the rules are enforced
 | Computer | Plays randomly | Plays sensibly, sometimes breaks a rule | Plays strongly, never breaks a rule |
 
 Details are in [docs/decisions.md](docs/decisions.md).
+
+## Challenges (Medium and Hard)
+
+On Medium and Hard the game does not stop you from breaking a rule (moving a piece over a chip, putting a chip on a star, and so on). It is up to your opponent to notice.
+
+- At the start of your turn, press **Challenge last turn**, then pick the rule you think your opponent broke.
+- **You were right:** the board goes back to how it was. After a movement rule you either take your own turn or make your opponent move a pentomino. After a placement rule you place one of their shapes for them (legally). Moving the same piece three turns in a row wins the game on the spot.
+- **You were wrong:** the move stands and you get a strike. After a movement rule your opponent chooses: you lose your turn, or you must move a pentomino. After a placement rule they move one of your chips. Three strikes loses the game.
+- You can only challenge the turn just before yours, and only once. If a game ends by a forfeit or entrapment, the loser may challenge the winning move once; if it broke a rule, the loser wins instead.
 
 ## How to Play
 

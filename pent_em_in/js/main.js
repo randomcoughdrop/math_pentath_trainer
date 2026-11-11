@@ -4,9 +4,10 @@ import { createInitialState } from "./state.js";
 import { applyMove, callTime, loseOnTime } from "./game.js";
 import { createClock, advanceClock, startTurn, setPaused } from "./clock.js";
 import { render, renderTray } from "./renderer.js";
-import { setupInput, computePreview, buildOverlay, clearSelection, legalMovesFor } from "./input.js";
+import { setupInput, computePreview, buildOverlay, clearSelection, playableMovesFor, placementOwner } from "./input.js";
 import { playerLabel, statusMessage, updateControls, renderLog, renderClocks, gameOverSummary } from "./ui.js";
 import { setupMenu, selectChoice } from "./menu.js";
+import { setupChallengeUI, renderChallengeUI } from "./challenge-ui.js";
 
 // --- the page's elements ---
 
@@ -46,6 +47,18 @@ const panels = {
   movement: $("movement-controls"),
   trays: $("trays"),
 };
+const challengeParts = {
+  bar: $("challenge-bar"),
+  open: $("btn-challenge"),
+  strikes: $("strikes"),
+  panel: $("challenge-panel"),
+  list: $("challenge-list"),
+  cancel: $("btn-challenge-cancel"),
+  decision: $("decision-panel"),
+  decisionButtons: $("decision-buttons"),
+  win: $("gameover-challenge"),
+  winButton: $("btn-challenge-win"),
+};
 const clockParts = {
   game: $("clock-game"),
   player1: $("clock-player-1"),
@@ -68,7 +81,7 @@ function resetView() {
   Object.assign(view, {
     held: null, hover: null, notice: "", announce: "",
     selected: null, action: "slide", pivot: null, turnPreview: null,
-    paused: false,
+    paused: false, challengeOpen: false,
   });
 }
 resetView();
@@ -115,7 +128,7 @@ function draw() {
   if (!state) return;
 
   const preview = computePreview(state, view.held, view.hover);
-  const legal = legalMovesFor(state);
+  const legal = playableMovesFor(state);
 
   // While paused the board is hidden, so nothing can be studied.
   gameView.hidden = view.paused;
@@ -124,8 +137,8 @@ function draw() {
   if (!view.paused) {
     render(board, state, { preview, ...buildOverlay(state, view, legal) });
     for (const player of [1, 2]) {
-      // Only the player whose turn it is can hold a piece.
-      renderTray(trays[player], state, player, state.currentPlayer === player ? view.held : null);
+      // Only the player whose piece is being placed can hold one.
+      renderTray(trays[player], state, player, placementOwner(state) === player ? view.held : null);
     }
   }
 
@@ -142,6 +155,7 @@ function draw() {
     $("gameover-detail").textContent = detail;
   }
 
+  renderChallengeUI(challengeParts, state, view);
   renderClocks(clockParts, state, clock);
 }
 
@@ -155,6 +169,7 @@ function handleMove(move) {
     view.held = null;
     view.hover = null;
     clearSelection(view);
+    view.challengeOpen = false;
     startTurn(clock); // the next player's turn timer starts at zero
   }
   return result;
@@ -162,6 +177,7 @@ function handleMove(move) {
 
 setupInput({ board, trays, buttons, view, getState: () => state, onMove: handleMove, onChange: draw });
 setupMenu({ menu, onStart: startGame });
+setupChallengeUI({ parts: challengeParts, view, onMove: handleMove, onChange: draw });
 
 $("btn-play-again").addEventListener("click", () => startGame(settings));
 $("btn-back-to-menu").addEventListener("click", showMenu);

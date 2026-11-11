@@ -137,5 +137,25 @@ Three incorrect challenges is an automatic loss.
 | Chess clock at zero | That player loses immediately, even in the middle of their turn. |
 | Pausing | Available on every level and stops every clock. The board and controls are hidden while paused. Keyboard shortcuts are ignored. |
 | Long gaps | The clock adds at most 10 seconds per timer tick, so a sleeping computer or hidden tab doesn't drain time. |
-| Medium and Hard rules | Until Phase 6 they enforce rules like Easy; the difference is the clocks. |
+| Medium and Hard rules | Superseded in Phase 6: they now allow rule-breaking moves (see below). |
 
+
+## Phase 6 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Who can challenge | The player to move, once, against the opponent's immediately preceding turn, before moving. The button is disabled when there is nothing to challenge, rather than hidden. |
+| Not telling | A wrong challenge only costs a strike; the game never hints whether the last move was legal. |
+| Correct placement challenge | The offender's piece goes back to their unused shapes, then the challenger places any one of the offender's remaining shapes legally. If the offender has no legal placement, they lose by forfeit. |
+| Incorrect placement challenge | The challenged player moves one of the challenger's chips to any empty non-star square. |
+| Forced pentomino move | The chosen player may not move a chip that turn (`mustMovePiece`). If no piece can move, the requirement is dropped. |
+| Winning by an illegal move | A game ended by forfeit or entrapment can be challenged once by the loser; if the final move broke a rule, the loser wins (`winReason: "declared-win"`). |
+| What a challenge keeps | Restoring the board keeps strikes, the written log, and the time-called flags. |
+| Medium and Hard move lists | The UI offers every possible move, not just legal ones, so the rule-breaking can actually be attempted. |
+
+## Easy-Only Movement Help
+
+| Topic | Decision |
+|---|---|
+| Stuck pieces | On Easy, the player's own pieces that have no legal move are drawn slightly washed out (grey overlay). Medium and Hard never do this. |
+| Rotate and Flip buttons | On Easy, greyed out when the selected piece has no legal rotation or flip. |

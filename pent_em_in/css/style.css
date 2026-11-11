@@ -226,3 +226,57 @@ canvas {
   padding: 0 1rem;
   font-size: 1rem;
 }
+
+/* ---- Challenges ---- */
+
+.challenge-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.challenge-bar button {
+  min-height: 44px;
+  padding: 0 1rem;
+  font-size: 1rem;
+}
+
+.panel {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid #333;
+  border-radius: 4px;
+  background: #fbfaf5;
+}
+
+.panel h2 {
+  margin: 0 0 0.5rem;
+}
+
+.choice-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.choice-buttons button,
+.panel > button {
+  min-height: 44px;
+  padding: 0.3rem 1rem;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.win-challenge {
+  font-size: 0.9rem;
+}
+
+.win-challenge button {
+  display: block;
+  margin-bottom: 0.25rem;
+}

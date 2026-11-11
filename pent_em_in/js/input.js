@@ -12,15 +12,16 @@
 //   pivot     - movement: the corner chosen to rotate around, [row, col]
 //   turnPreview - movement: 1, 2, or 3, while the pointer is over a turn button
 //   paused    - the game is paused (the board is hidden)
+//   challengeOpen - the list of challenge rules is showing
 //
 // Everything that decides things is a plain function (easy to test). Only
 // setupInput touches the page.
 
 import { SHAPE_NAMES, getShapeCells } from "./pieces.js";
 import { rotateAboutVertex, flipOverSide, normalize, slideCells } from "./transforms.js";
-import { analyzeMove, isAllowed } from "./analyze.js";
-import { getLegalMoves } from "./moves.js";
-import { DIRECTIONS, cellsAfterMove } from "./rules.js";
+import { analyzePlacement, isAllowed } from "./analyze.js";
+import { getAllowedMoves } from "./moves.js";
+import { DIRECTIONS, cellsAfterMove, blocksViolations } from "./rules.js";
 import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "./renderer.js";
 
 // ---------------------------------------------------------------------------
@@ -54,25 +55,45 @@ export function cellsAt(held, row, col) {
   return slideCells(held.cells, top, left);
 }
 
-// What the ghost should show: { cells, ok, message }, or null if nothing is held
-// or the cursor isn't on the board. "ok" means the piece may be placed there.
-export function computePreview(state, held, hover) {
-  if (state.phase !== "placement" || !held || !hover) return null;
+// Is someone placing a piece right now? That is the placement phase, or the
+// step after a correct challenge on a placement (when the challenger places a
+// piece for the opponent).
+export function isPlacingNow(state) {
+  return state.phase === "placement" && (!state.pending || state.pending.kind === "place-for");
+}
 
+// Whose piece is being placed: normally the player to move, but after a
+// correct placement challenge it is the opponent's piece.
+export function placementOwner(state) {
+  return state.pending && state.pending.kind === "place-for" ? state.pending.offender : state.currentPlayer;
+}
+
+// What the ghost should show: { cells, ok, message, owner }, or null if nothing
+// is held or the cursor isn't on the board. "ok" means the piece may be placed
+// there. (A piece placed for the opponent after a challenge must be legal, even
+// on Medium and Hard.)
+export function computePreview(state, held, hover) {
+  if (!isPlacingNow(state) || !held || !hover) return null;
+
+  const owner = placementOwner(state);
   const cells = cellsAt(held, hover.row, hover.col);
-  const analysis = analyzeMove(state, { type: "place", shape: held.shape, cells });
-  return { cells, ok: isAllowed(state, analysis), message: analysis.message };
+  const analysis = analyzePlacement(state, owner, cells);
+  const ok = state.pending ? analysis.legal : isAllowed(state, analysis);
+  return { cells, ok, message: analysis.message, owner };
 }
 
 // ---------------------------------------------------------------------------
 // Movement: what can be clicked
 // ---------------------------------------------------------------------------
 
-// The legal moves for the current player, worked out once per state.
+// The moves the current player may make, worked out once per state. On Easy
+// these are only the legal moves; on Medium and Hard they include moves that
+// break a rule (which the opponent can challenge).
 let cache = { state: null, moves: [] };
-export function legalMovesFor(state) {
+export function playableMovesFor(state) {
   if (cache.state !== state) {
-    cache = { state, moves: state.phase === "movement" ? getLegalMoves(state) : [] };
+    const moving = state.phase === "movement" && !state.pending;
+    cache = { state, moves: moving ? getAllowedMoves(state) : [] };
   }
   return cache.moves;
 }
@@ -135,10 +156,25 @@ export function chipTargets(legal, chipId) {
 
 // Extra things for the renderer to draw on top of the board while a piece or
 // chip is selected: { selectedPieceId, selectedChipId, destinations, corners, pivot, ghosts }.
+// Easy-only help in the movement phase: which of the player's pieces have no
+// legal move at all. Returns null on Medium and Hard (and outside movement).
+export function easyHelpFor(state, legal) {
+  if (!blocksViolations(state) || state.phase !== "movement" || state.pending) return null;
+  const stuckPieceIds = state.pieces
+    .filter((piece) => piece.owner === state.currentPlayer && movesForPiece(legal, piece.id).length === 0)
+    .map((piece) => piece.id);
+  return { stuckPieceIds };
+}
+
 export function buildOverlay(state, view, legal) {
   const overlay = {};
+  const easyHelp = easyHelpFor(state, legal);
+  if (easyHelp && easyHelp.stuckPieceIds.length > 0) overlay.dimmedPieceIds = easyHelp.stuckPieceIds;
   const selected = view.selected;
-  if (state.phase !== "movement" || !selected) return overlay;
+  if (state.pending && state.pending.kind === "move-chip" && selected && selected.kind === "chip") {
+    return { selectedChipId: selected.id };
+  }
+  if (state.phase !== "movement" || state.pending || !selected) return overlay;
 
   if (selected.kind === "chip") {
     overlay.selectedChipId = selected.id;
@@ -264,6 +300,30 @@ export function turnMove(state, view, legal, quarterTurns) {
     move.type === "rotate" && move.quarterTurns === quarterTurns && sameSquare(move.pivot, view.pivot)) ?? null;
 }
 
+// After an incorrect challenge on a placement, the challenged player moves one
+// of the challenger's chips: click the chip, then any empty square. Returns the
+// move once there is one.
+export function relocationClick(state, view, cell) {
+  view.notice = "";
+  if (!cell) return null;
+
+  const chip = state.chips.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
+  if (chip) {
+    if (chip.owner !== state.pending.challenger) {
+      view.notice = "Pick one of the other player's chips.";
+      return null;
+    }
+    view.selected = { kind: "chip", id: chip.id };
+    return null;
+  }
+
+  if (!view.selected || view.selected.kind !== "chip") {
+    view.notice = "Click one of the other player's chips first.";
+    return null;
+  }
+  return { type: "relocate-chip", chipId: view.selected.id, to: { row: cell.row, col: cell.col } };
+}
+
 // ---------------------------------------------------------------------------
 // Wiring to the page
 // ---------------------------------------------------------------------------
@@ -276,7 +336,7 @@ export function turnMove(state, view, legal, quarterTurns) {
 //   onMove(move)    - tries to play a move; returns { ok, message }
 //   onChange()      - called after anything that needs a redraw
 export function setupInput({ board, trays, buttons, view, getState, onMove, onChange }) {
-  const phaseIs = (phase) => getState()?.phase === phase;
+  const placing = () => Boolean(getState()) && isPlacingNow(getState());
 
   function play(move) {
     const result = onMove(move);
@@ -287,23 +347,23 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   // --- placement actions ---
 
   function rotate(clockwise) {
-    if (!phaseIs("placement") || !view.held) return;
+    if (!placing() || !view.held) return;
     view.held = rotateHeld(view.held, clockwise);
     view.notice = "";
     onChange();
   }
 
   function flip() {
-    if (!phaseIs("placement") || !view.held) return;
+    if (!placing() || !view.held) return;
     view.held = flipHeld(view.held);
     view.notice = "";
     onChange();
   }
 
   function cancel() {
-    if (phaseIs("placement") && view.held) {
+    if (placing() && view.held) {
       view.held = null;
-    } else if (phaseIs("movement") && view.selected) {
+    } else if (view.selected) {
       clearSelection(view);
     } else {
       return;
@@ -313,7 +373,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   }
 
   function tryPlace() {
-    if (!phaseIs("placement") || !view.held || !view.hover) return;
+    if (!placing() || !view.held || !view.hover) return;
     play({
       type: "place",
       shape: view.held.shape,
@@ -351,15 +411,23 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     const state = getState();
     if (!state) return;
 
+    if (state.pending && state.pending.kind === "move-chip") {
+      const move = relocationClick(state, view, squareUnderPointer(event));
+      if (move) play(move);
+      else onChange();
+      return;
+    }
+    if (state.pending && state.pending.kind === "choose") return;
+
     if (state.phase === "movement") {
       const { x, y, width } = pointOnBoard(event);
-      const move = movementClick(state, view, legalMovesFor(state), boardCellFromPoint(x, y, width), vertexFromPoint(x, y, width));
+      const move = movementClick(state, view, playableMovesFor(state), boardCellFromPoint(x, y, width), vertexFromPoint(x, y, width));
       if (move) play(move);
       else onChange();
       return;
     }
 
-    if (state.phase !== "placement" || !view.held) return;
+    if (!isPlacingNow(state) || !view.held) return;
 
     const square = squareUnderPointer(event);
     if (!square) return;
@@ -387,7 +455,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     trays[player].addEventListener("pointerup", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       const state = getState();
-      if (!state || state.phase !== "placement" || state.currentPlayer !== player) return;
+      if (!state || !isPlacingNow(state) || placementOwner(state) !== player) return;
 
       const rect = trays[player].getBoundingClientRect();
       const index = trayIndexFromPoint(event.clientX - rect.left, event.clientY - rect.top, rect.width);
@@ -434,7 +502,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     button.addEventListener("blur", hide);
     button.addEventListener("click", () => {
       const state = getState();
-      const move = turnMove(state, view, legalMovesFor(state), quarterTurns);
+      const move = turnMove(state, view, playableMovesFor(state), quarterTurns);
       if (move) play(move);
     });
   });

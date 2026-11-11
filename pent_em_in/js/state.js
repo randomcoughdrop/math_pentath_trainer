@@ -23,8 +23,11 @@ export function createInitialState(options = {}) {
     placedCount: { 1: 0, 2: 0 },
     repeat: { 1: { pieceId: null, count: 0 }, 2: { pieceId: null, count: 0 } },
     lastWasChipMove: { 1: false, 2: false },
-    lastTurn: null,
-    strikes: { 1: 0, 2: 0 },
+    lastTurn: null, // { player, move, violations } of the most recent turn; null once it can't be challenged
+    strikes: { 1: 0, 2: 0 }, // incorrect challenges; three loses the game
+    pending: null, // a challenge decision someone still has to make (see challenges.js)
+    mustMovePiece: false, // the player to move was forced to move a pentomino, not a chip
+    winChallenged: false, // the loser has already challenged the declared win
     history: [],
     moveLog: [],
     timeCalled: false, // the game cap ran out; the game ends after timeEndsAfter's turn

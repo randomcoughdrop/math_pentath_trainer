@@ -361,7 +361,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   2. **Placement:** the opponent cannot place all 5 pieces (from Phase 3)
   3. **No legal move:** the player to move has nothing legal to do (always the same as entrapment, since every move is a move of a piece or chip)
 - Game-over box above the board with the winner and reason; "Play again" and "Back to menu" buttons.
-- Start screen: choose **2 Players** (the CPU option is greyed out until Phase 7), a **difficulty** (three preset buttons: Easy, Medium, Hard), and a color scheme. `bandForLevel` and `BAND_RULES` wire the setting into the rules, but until Phase 6 only Easy behavior is active, so the other bands behave like Easy.
+- Start screen: choose **2 Players** (the CPU option is greyed out until Phase 7), a **difficulty** (three preset buttons: Easy, Medium, Hard), and a color scheme. `bandForLevel` and `BAND_RULES` wire the setting into the rules, and Phase 6 turns on the Medium and Hard behavior.
 - `clock.js`:
   - 60-minute game cap on Easy and Medium: on expiry, `game.js` applies the equal-turns rule and declares a tie if nobody has won
   - 30-minute chess clock per player on Hard: running out of time loses (`winReason: "time"`)
@@ -375,13 +375,13 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 
 ---
 
-### Phase 6: Rule-Breaking Moves and Challenges (Medium and Hard)
+### Phase 6: Rule-Breaking Moves and Challenges (Medium and Hard) ✅ Done
 **Goal:** On Medium and Hard, rule-breaking moves are allowed and the opponent can challenge them.
 
 - `analyze.js` and `game.js`: on Medium and Hard, accept any *possible* move and store its `violations` in `state.lastTurn`. Easy still refuses violations.
 - `challenges.js`:
   - `canChallenge(state)`: true at the start of a turn when challenges are enabled and there is a previous turn
-  - `resolveChallenge(state, category, choice)`: correct or incorrect per the "Challenge procedure" table, using `history.js` to restore the board
+  - `challenge(state, category)` plus `decide`, `placeForOpponent`, `relocateChip`: correct or incorrect per the "Challenge procedure" table, using `history.js` to restore the board
   - `piece-repeat` correct challenge: the challenger wins immediately
   - strike tracking and the three-incorrect-challenges loss (`winReason: "strikes"`)
 - UI: a **Challenge** button visible at the start of every turn on Medium and Hard. Clicking it opens the list of rule categories, then any follow-up choice dialog ("Take a turn" or "Force a pentomino move" for a correct challenge; the challenged player's choice for an incorrect one; "Place a piece for the opponent" for a correct placement challenge).

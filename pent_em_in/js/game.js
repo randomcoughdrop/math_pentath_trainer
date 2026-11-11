@@ -5,13 +5,30 @@ import { getShapeCells } from "./pieces.js";
 import { orientations, shapeKey } from "./transforms.js";
 import { analyzeMove, analyzePlacement, isAllowed } from "./analyze.js";
 import { copyState, otherPlayer } from "./state.js";
-import { hasLegalPlacement, getLegalMoves } from "./moves.js";
+import { checkPlacementForfeit, checkEntrapment } from "./turn.js";
 import { cellsAfterMove } from "./rules.js";
 import { recordSnapshot } from "./history.js";
+import { challenge, decide, placeForOpponent, relocateChip, challengeWin } from "./challenges.js";
 
 // Play a move for the current player. Never changes the state it is given.
 // Returns { ok: true, state } with the new state, or { ok: false, message }.
 export function applyMove(state, move) {
+  // After the game: the loser may challenge a declared win.
+  if (state.phase === "gameover") {
+    if (move.type === "challenge-win") return challengeWin(state);
+    return { ok: false, message: "The game is over." };
+  }
+
+  // A challenge is waiting for someone's choice: only that choice is possible.
+  if (state.pending) {
+    if (move.type === "decide") return decide(state, move.choice);
+    if (move.type === "place") return placeForOpponent(state, move);
+    if (move.type === "relocate-chip") return relocateChip(state, move);
+    return { ok: false, message: "Finish the challenge first." };
+  }
+
+  if (move.type === "challenge") return challenge(state, move.category);
+
   if (state.phase === "placement" && move.type === "place") {
     return applyPlacement(state, move);
   }
@@ -49,6 +66,7 @@ function applyPlacement(state, move) {
   next.placedCount[player] += 1;
   next.moveLog.push({ type: "place", player, shape: move.shape, cells });
   next.lastTurn = { player, move: { type: "place", shape: move.shape, cells }, violations: analysis.violations };
+  next.mustMovePiece = false;
 
   startNextTurn(next, player);
   return { ok: true, state: next };
@@ -96,6 +114,7 @@ function applyMovement(state, move) {
   }
 
   next.lastTurn = { player, move: { ...move }, violations: analysis.violations };
+  next.mustMovePiece = false;
 
   startNextTurn(next, player);
   return { ok: true, state: next };
@@ -122,36 +141,13 @@ function passTurn(state, playerWhoJustMoved) {
   if (state.phase === "placement") {
     const done = state.placedCount[1] === PIECES_PER_PLAYER && state.placedCount[2] === PIECES_PER_PLAYER;
     if (!done) {
-      // A player who cannot place a piece without breaking a rule forfeits.
-      if (!hasLegalPlacement(state, state.currentPlayer)) {
-        state.phase = "gameover";
-        state.winner = otherPlayer(state.currentPlayer);
-        state.winReason = "placement";
-      }
+      checkPlacementForfeit(state);
       return;
     }
     state.phase = "movement";
   }
 
-  checkForStuckPlayer(state);
-}
-
-// The player about to move loses if all of their pieces are entrapped (no
-// piece has a legal move). That also covers having no legal move at all, since
-// a legal move would have to be a move of one of their pieces or chips, and
-// the rules count a player who can only shuffle chips as entrapped.
-function checkForStuckPlayer(state) {
-  const player = state.currentPlayer;
-  const legal = getLegalMoves(state);
-
-  const mine = state.pieces.filter((piece) => piece.owner === player);
-  const allTrapped = mine.every((piece) => !legal.some((move) => move.pieceId === piece.id));
-
-  if (allTrapped) {
-    state.phase = "gameover";
-    state.winner = otherPlayer(player);
-    state.winReason = "entrapment";
-  }
+  checkEntrapment(state);
 }
 
 // ---------------------------------------------------------------------------
