@@ -123,3 +123,19 @@ Three incorrect challenges is an automatic loss.
 | Entrapment | A player whose pieces all have no legal move loses when their turn starts (`winReason: "entrapment"`), including at the very start of the movement phase. A trapped player who still has chip moves counts as trapped. |
 | Piece trays in movement | Hidden once placement is over. |
 | History | A snapshot of the state is saved before every move, placements included. |
+
+## Phase 5 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Menu | A start screen with Players (the computer is shown but disabled), Difficulty (three presets), and Colors. `?difficulty=`, `?colors=`, and `?first=` preselect or override. |
+| Game over | A box above the board with the winner and the reason and two buttons (Play again, Back to menu). It sits above the board rather than covering it, so the final position stays visible. |
+| Play again | Same settings, new random first player. |
+| When the clocks run | From the first placement. The chess clock runs for whoever is on the move; the game cap counts all play. |
+| Turn alert | Medium and Hard only: after 60 seconds on a turn the turn timer flashes until the turn ends, with an optional beep (a checkbox, off by default). No penalty. |
+| Equal turns when the cap runs out | The player on the move finishes. If they moved first in the game, the other player gets one more turn. Then it is a tie unless someone wins first. |
+| Chess clock at zero | That player loses immediately, even in the middle of their turn. |
+| Pausing | Available on every level and stops every clock. The board and controls are hidden while paused. Keyboard shortcuts are ignored. |
+| Long gaps | The clock adds at most 10 seconds per timer tick, so a sleeping computer or hidden tab doesn't drain time. |
+| Medium and Hard rules | Until Phase 6 they enforce rules like Easy; the difference is the clocks. |
+

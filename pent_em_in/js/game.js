@@ -1,4 +1,4 @@
-// Turn flow, phases, and win detection. So far this covers placement and movement.
+// Turn flow, phases, and win detection: placement, movement, and running out of time.
 
 import { PIECES_PER_PLAYER } from "./constants.js";
 import { getShapeCells } from "./pieces.js";
@@ -101,9 +101,22 @@ function applyMovement(state, move) {
   return { ok: true, state: next };
 }
 
+// Pass the turn, check whether that ends the game, and apply the time limit if
+// it has been called.
+function startNextTurn(state, playerWhoJustMoved) {
+  passTurn(state, playerWhoJustMoved);
+
+  // A win by the rules comes first; otherwise the called time ends the game.
+  if (state.phase !== "gameover" && state.timeCalled && playerWhoJustMoved === state.timeEndsAfter) {
+    state.phase = "gameover";
+    state.winner = null;
+    state.winReason = "time";
+  }
+}
+
 // Hand the turn to the other player, then check what that means: placement
 // may be over, or the next player may be stuck.
-function startNextTurn(state, playerWhoJustMoved) {
+function passTurn(state, playerWhoJustMoved) {
   state.currentPlayer = otherPlayer(playerWhoJustMoved);
 
   if (state.phase === "placement") {
@@ -139,4 +152,34 @@ function checkForStuckPlayer(state) {
     state.winner = otherPlayer(player);
     state.winReason = "entrapment";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Running out of time (the page's clock calls these)
+// ---------------------------------------------------------------------------
+
+// The game cap ran out (Easy and Medium). The player on the move finishes their
+// turn. If that player moved first in the game, the other player gets one more
+// turn so that both have had the same number. Then the game is a tie, unless
+// someone wins on the way. Returns a new state.
+export function callTime(state) {
+  if (state.phase === "gameover" || state.timeCalled) return state;
+
+  const next = copyState(state);
+  next.timeCalled = true;
+  next.timeEndsAfter = state.currentPlayer === state.startingPlayer
+    ? otherPlayer(state.currentPlayer)
+    : state.currentPlayer;
+  return next;
+}
+
+// A player's chess clock reached zero (Hard): they lose. Returns a new state.
+export function loseOnTime(state, player) {
+  if (state.phase === "gameover") return state;
+
+  const next = copyState(state);
+  next.phase = "gameover";
+  next.winner = otherPlayer(player);
+  next.winReason = "time";
+  return next;
 }

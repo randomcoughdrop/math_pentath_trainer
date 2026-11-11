@@ -12,52 +12,109 @@
     <h1>Pent 'Em In</h1>
   </header>
 
-  <main>
+  <!-- The start screen -->
+  <section id="menu">
+    <form>
+      <fieldset>
+        <legend>Players</legend>
+        <label class="choice"><input type="radio" name="players" value="2" checked> <strong>2 Players</strong> <span>on this screen</span></label>
+        <label class="choice disabled"><input type="radio" name="players" value="cpu" disabled> <strong>Play the computer</strong> <span>coming soon</span></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Difficulty</legend>
+        <label class="choice"><input type="radio" name="difficulty" value="easy" checked> <strong>Easy</strong>
+          <span>Rule-breaking moves are blocked. 60-minute game limit, no turn timer.</span></label>
+        <label class="choice"><input type="radio" name="difficulty" value="medium"> <strong>Medium</strong>
+          <span>60-minute game limit and a reminder after 60 seconds on a turn. Rule-breaking moves and challenges arrive in a later update.</span></label>
+        <label class="choice"><input type="radio" name="difficulty" value="hard"> <strong>Hard</strong>
+          <span>A 30-minute chess clock for each player and a reminder after 60 seconds on a turn. Rule-breaking moves and challenges arrive in a later update.</span></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Colors</legend>
+        <label class="choice"><input type="radio" name="colors" value="red-blue" checked> <strong>Red and blue</strong></label>
+        <label class="choice"><input type="radio" name="colors" value="yellow-green"> <strong>Yellow and green</strong></label>
+      </fieldset>
+
+      <button type="submit" id="btn-start">Start game</button>
+    </form>
+  </section>
+
+  <!-- The game -->
+  <main id="game" hidden>
     <p id="status" aria-live="polite">Loading...</p>
 
-    <!-- Placement phase controls -->
-    <div class="controls" id="placement-controls">
-      <button type="button" id="btn-rotate-left" title="Rotate counterclockwise (Shift+R)">&#8634; Rotate left</button>
-      <button type="button" id="btn-rotate-right" title="Rotate clockwise (R)">&#8635; Rotate right</button>
-      <button type="button" id="btn-flip" title="Flip left to right (F)">&#8646; Flip</button>
-      <button type="button" id="btn-place" title="Place the piece where the preview is">Place</button>
-      <button type="button" id="btn-cancel" title="Put the piece back (Esc)">Cancel</button>
-    </div>
-
-    <!-- Movement phase controls -->
-    <div class="controls" id="movement-controls" hidden>
-      <button type="button" id="btn-slide" title="Slide the selected piece in a straight line">Slide</button>
-      <button type="button" id="btn-rotate" title="Rotate the selected piece around one of its outer corners">Rotate</button>
-      <button type="button" id="btn-flip-piece" title="Flip the selected piece over one of its four sides">Flip</button>
-      <span class="control-group" aria-label="Turn">
-        <button type="button" id="btn-turn-90">&#8635; 90&deg;</button>
-        <button type="button" id="btn-turn-180">&#8635; 180&deg;</button>
-        <button type="button" id="btn-turn-270">&#8635; 270&deg;</button>
-      </span>
-      <button type="button" id="btn-move-cancel" title="Deselect (Esc)">Deselect</button>
-    </div>
-
-    <div class="play-area">
-      <div class="board-wrapper">
-        <canvas id="board" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
-      </div>
-
-      <aside class="log-panel">
-        <h2>Move log</h2>
-        <div class="log-scroll"><ol id="move-log"></ol></div>
-      </aside>
-    </div>
-
-    <section class="trays" id="trays">
-      <div class="tray" id="tray-box-1">
-        <h2 id="tray-title-1">Player 1</h2>
-        <canvas id="tray-1" role="img" aria-label="Player 1 piece tray"></canvas>
-      </div>
-      <div class="tray" id="tray-box-2">
-        <h2 id="tray-title-2">Player 2</h2>
-        <canvas id="tray-2" role="img" aria-label="Player 2 piece tray"></canvas>
-      </div>
+    <!-- Shown when the game ends -->
+    <section id="gameover" class="gameover" hidden>
+      <h2 id="gameover-title"></h2>
+      <p id="gameover-detail"></p>
+      <button type="button" id="btn-play-again">Play again</button>
+      <button type="button" id="btn-back-to-menu">Back to menu</button>
     </section>
+
+    <!-- The clocks -->
+    <div class="clock-bar">
+      <span id="clock-game"></span>
+      <span id="clock-player-1" class="clock-player"></span>
+      <span id="clock-player-2" class="clock-player"></span>
+      <span id="clock-turn"></span>
+      <button type="button" id="btn-pause">Pause</button>
+      <label id="sound-option" class="sound-option"><input type="checkbox" id="sound-toggle"> Beep for the turn reminder</label>
+    </div>
+
+    <!-- Shown instead of the board while paused -->
+    <section id="pause-banner" class="gameover" hidden>
+      <h2>Paused</h2>
+      <p>The clocks are stopped and the board is hidden.</p>
+      <button type="button" id="btn-resume">Resume</button>
+    </section>
+
+    <div id="game-view">
+      <!-- Placement phase controls -->
+      <div class="controls" id="placement-controls">
+        <button type="button" id="btn-rotate-left" title="Rotate counterclockwise (Shift+R)">&#8634; Rotate left</button>
+        <button type="button" id="btn-rotate-right" title="Rotate clockwise (R)">&#8635; Rotate right</button>
+        <button type="button" id="btn-flip" title="Flip left to right (F)">&#8646; Flip</button>
+        <button type="button" id="btn-place" title="Place the piece where the preview is">Place</button>
+        <button type="button" id="btn-cancel" title="Put the piece back (Esc)">Cancel</button>
+      </div>
+
+      <!-- Movement phase controls -->
+      <div class="controls" id="movement-controls" hidden>
+        <button type="button" id="btn-slide" title="Slide the selected piece in a straight line">Slide</button>
+        <button type="button" id="btn-rotate" title="Rotate the selected piece around one of its outer corners">Rotate</button>
+        <button type="button" id="btn-flip-piece" title="Flip the selected piece over one of its four sides">Flip</button>
+        <span class="control-group" aria-label="Turn">
+          <button type="button" id="btn-turn-90">&#8635; 90&deg;</button>
+          <button type="button" id="btn-turn-180">&#8635; 180&deg;</button>
+          <button type="button" id="btn-turn-270">&#8635; 270&deg;</button>
+        </span>
+        <button type="button" id="btn-move-cancel" title="Deselect (Esc)">Deselect</button>
+      </div>
+
+      <div class="play-area">
+        <div class="board-wrapper">
+          <canvas id="board" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
+        </div>
+
+        <aside class="log-panel">
+          <h2>Move log</h2>
+          <div class="log-scroll"><ol id="move-log"></ol></div>
+        </aside>
+      </div>
+
+      <section class="trays" id="trays">
+        <div class="tray" id="tray-box-1">
+          <h2 id="tray-title-1">Player 1</h2>
+          <canvas id="tray-1" role="img" aria-label="Player 1 piece tray"></canvas>
+        </div>
+        <div class="tray" id="tray-box-2">
+          <h2 id="tray-title-2">Player 2</h2>
+          <canvas id="tray-2" role="img" aria-label="Player 2 piece tray"></canvas>
+        </div>
+      </section>
+    </div>
   </main>
 
   <script type="module" src="js/main.js"></script>

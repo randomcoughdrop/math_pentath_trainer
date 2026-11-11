@@ -3,6 +3,7 @@
 import { COLOR_SCHEMES, PIECES_PER_PLAYER } from "./constants.js";
 import { otherPlayer } from "./state.js";
 import { movesForPiece, rotateTurns } from "./input.js";
+import { formatTime } from "./clock.js";
 
 // "Player 1 (Red)"
 export function playerLabel(state, player) {
@@ -14,7 +15,19 @@ export function playerLabel(state, player) {
 //   preview - the placement ghost, or null (see computePreview in input.js)
 //   legal   - the current player's legal moves (movement phase)
 export function statusMessage(state, view, preview, legal = []) {
-  if (state.phase === "gameover") return gameOverMessage(state);
+  if (state.phase === "gameover") {
+    const { title, detail } = gameOverSummary(state);
+    return title + " " + detail;
+  }
+
+  const message = turnMessage(state, view, preview, legal);
+  if (!state.timeCalled) return message;
+
+  // The game cap ran out: say how the game will end.
+  return "Time is up! The game ends after " + playerLabel(state, state.timeEndsAfter) + "'s turn. " + message;
+}
+
+function turnMessage(state, view, preview, legal) {
   if (state.phase === "movement") return movementMessage(state, view, legal);
 
   const player = state.currentPlayer;
@@ -42,17 +55,25 @@ export function statusMessage(state, view, preview, legal = []) {
   return message;
 }
 
-function gameOverMessage(state) {
+// What to show when the game is over: a headline and the reason.
+export function gameOverSummary(state) {
+  if (state.winner === null) {
+    return { title: "It's a tie!", detail: "Time ran out and nobody had won." };
+  }
+
   const loser = otherPlayer(state.winner);
-  const winner = playerLabel(state, state.winner);
+  const title = playerLabel(state, state.winner) + " wins!";
 
   if (state.winReason === "placement") {
-    return playerLabel(state, loser) + " can't place any piece, so " + winner + " wins!";
+    return { title, detail: playerLabel(state, loser) + " can't place any more pieces." };
   }
   if (state.winReason === "entrapment") {
-    return "All of " + playerLabel(state, loser) + "'s pieces are trapped, so " + winner + " wins!";
+    return { title, detail: "All of " + playerLabel(state, loser) + "'s pieces are trapped." };
   }
-  return "Game over.";
+  if (state.winReason === "time") {
+    return { title, detail: playerLabel(state, loser) + " ran out of time on their clock." };
+  }
+  return { title, detail: "" };
 }
 
 function movementMessage(state, view, legal) {
@@ -185,4 +206,38 @@ export function updateControls(state, view, preview, legal, buttons, panels, tra
   for (const player of [1, 2]) {
     trayBoxes[player].classList.toggle("active", placing && state.currentPlayer === player);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Clocks
+// ---------------------------------------------------------------------------
+
+// Show the clocks.
+//   parts - the page's elements: { game, player1, player2, turn, pause, sound }
+//   clock - the clock (see clock.js)
+export function renderClocks(parts, state, clock) {
+  const chess = clock.type === "chess";
+
+  parts.game.hidden = chess;
+  parts.player1.hidden = !chess;
+  parts.player2.hidden = !chess;
+  parts.turn.hidden = clock.turnAlertMs === null;
+  parts.sound.hidden = clock.turnAlertMs === null; // there is no reminder to beep for
+
+  if (chess) {
+    for (const player of [1, 2]) {
+      const part = parts["player" + player];
+      part.textContent = playerLabel(state, player) + ": " + formatTime(clock.remainingMs[player], { remaining: true });
+      part.classList.toggle("running", state.phase !== "gameover" && !clock.paused && state.currentPlayer === player);
+    }
+  } else {
+    parts.game.textContent = "Game time: " + formatTime(Math.min(clock.elapsedMs, clock.limitMs)) +
+      " of " + formatTime(clock.limitMs);
+  }
+
+  parts.turn.textContent = "This turn: " + formatTime(clock.turnMs);
+  parts.turn.classList.toggle("alert", clock.alerted && state.phase !== "gameover");
+
+  parts.pause.textContent = clock.paused ? "Resume" : "Pause";
+  parts.pause.disabled = state.phase === "gameover";
 }

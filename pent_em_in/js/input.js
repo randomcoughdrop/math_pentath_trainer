@@ -11,6 +11,7 @@
 //   action    - movement: "slide", "rotate", or "flip" for the selected piece
 //   pivot     - movement: the corner chosen to rotate around, [row, col]
 //   turnPreview - movement: 1, 2, or 3, while the pointer is over a turn button
+//   paused    - the game is paused (the board is hidden)
 //
 // Everything that decides things is a plain function (easy to test). Only
 // setupInput touches the page.
@@ -275,7 +276,7 @@ export function turnMove(state, view, legal, quarterTurns) {
 //   onMove(move)    - tries to play a move; returns { ok, message }
 //   onChange()      - called after anything that needs a redraw
 export function setupInput({ board, trays, buttons, view, getState, onMove, onChange }) {
-  const phaseIs = (phase) => getState().phase === phase;
+  const phaseIs = (phase) => getState()?.phase === phase;
 
   function play(move) {
     const result = onMove(move);
@@ -348,6 +349,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   board.addEventListener("pointerup", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const state = getState();
+    if (!state) return;
 
     if (state.phase === "movement") {
       const { x, y, width } = pointOnBoard(event);
@@ -385,7 +387,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     trays[player].addEventListener("pointerup", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       const state = getState();
-      if (state.phase !== "placement" || state.currentPlayer !== player) return;
+      if (!state || state.phase !== "placement" || state.currentPlayer !== player) return;
 
       const rect = trays[player].getBoundingClientRect();
       const index = trayIndexFromPoint(event.clientX - rect.left, event.clientY - rect.top, rect.width);
@@ -440,6 +442,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
 
   document.addEventListener("keydown", (event) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (view.paused || !getState()) return; // paused, or no game on screen
     const key = event.key.toLowerCase();
     if (key === "r") rotate(!event.shiftKey); // Shift+R turns the other way
     else if (key === "f") flip();

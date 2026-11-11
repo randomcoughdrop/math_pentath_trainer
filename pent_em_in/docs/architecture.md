@@ -24,10 +24,11 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/moves.js` | Generates legal moves |
 | `js/challenges.js` | Challenge categories, outcomes, strikes |
 | `js/game.js` | Turn flow, phases, win detection |
-| `js/clock.js` | Game cap, chess clock, turn alert, pause |
+| `js/clock.js` | Game cap, chess clock, turn alert, pause (pure; told how much time passed) |
 | `js/renderer.js` | Draws the state to the canvas |
 | `js/input.js` | Mouse, touch, and keyboard to game actions |
-| `js/ui.js` | Status text, buttons, menus |
+| `js/ui.js` | Status text, game-over text, clocks display, buttons, move log |
+| `js/menu.js` | The start screen |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
 ## Coordinates
@@ -161,6 +162,29 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 - `input.js` keeps pure helpers that work out what can be clicked (`slideTargets`, `rotateCorners`, `rotateTurns`, `flipChoices`, `chipTargets`) from the list of legal moves, `movementClick` (selects, picks a pivot, or returns a finished move), and `buildOverlay`, which tells the renderer what to mark. `legalMovesFor(state)` works out the legal moves once per state.
 - `renderer.js` draws the selection outline, dots on clickable squares, dots on pivot corners, see-through ghosts, and the ×2 streak badge. `vertexFromPoint` finds the grid corner under a click.
 - `ui.js` builds the status line and the move log text (`describeEntry`) and shows or hides the placement and movement buttons. The piece trays are hidden once placement is over.
+
+## Phase 5: Endings, Clocks, and the Start Screen
+
+**Ways a game ends** (`state.phase` becomes `"gameover"`; `winner` is 1, 2, or `null` for a tie):
+
+| `winReason` | When | Winner |
+|---|---|---|
+| `"placement"` | A player has no legal placement left (Phase 3) | The other player |
+| `"entrapment"` | All of the player-to-move's pieces have no legal move (Phase 4) | The other player |
+| `"time"` with a winner | A player's chess clock reached zero (Hard) | The other player |
+| `"time"` with `winner: null` | The game cap ran out and nobody won (Easy, Medium) | Tie |
+
+**Clocks live outside the rules.** `clock.js` holds a plain clock object (`createClock(level)`) and functions that are *told* how much time has passed (`advanceClock(clock, ms, player)`), so nothing in it waits on a real timer and it can be tested instantly. It reports what happened: `{ capReached, flagFall, turnAlert }`. `main.js` runs a timer a few times a second, measures real elapsed time (never more than 10 seconds per tick, so a sleeping computer doesn't burn a clock), and passes it in. The clock's type comes from `BAND_RULES` through `bandForLevel(level)`.
+
+**When time is up the page tells the game**, with two functions in `game.js`:
+- `callTime(state)` (game cap): sets `timeCalled` and `timeEndsAfter`. The player on the move finishes their turn. If they are the player who moved first in the game, the other player gets one more turn so both have equal turns. After that turn `applyMove` ends the game as a tie, unless a win by the rules happened first (that takes priority).
+- `loseOnTime(state, player)` (chess clock): that player loses.
+
+**Pausing** is page-only: `view.paused` stops the clock (`setPaused`) and hides the board and controls, so the position can't be studied while the clocks are stopped.
+
+**The start screen** (`menu.js`) turns radio-button choices into settings (`settingsFromChoices`), and `main.js` `startGame` builds the state and clock from them. "Play again" starts a new game with the same settings; "Back to menu" returns to the start screen.
+
+Until Phase 6, Medium and Hard enforce the rules exactly like Easy (`blocksViolations` still returns true); only their clocks differ.
 
 ## To Be Written
 

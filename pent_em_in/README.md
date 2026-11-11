@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 4 (two players on one screen can place their pieces and then play the movement phase, with every rule enforced). Game-over screens, clocks, and the difficulty levels arrive in Phase 5. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 5 (a complete two-player game on one screen: start screen, placement, movement, clocks, and a game-over screen). Medium and Hard currently enforce the rules like Easy; challenges arrive in Phase 6, and the computer opponent after that. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 
@@ -20,7 +20,7 @@ On GitHub Pages it works as-is, with no build step.
 
 To see the second color set (yellow and green instead of red and blue), add `?colors=yellow-green` to the address.
 
-To choose who goes first instead of the random draw, add `?first=1` or `?first=2`. Combine options with `&`, for example `?colors=yellow-green&first=2`.
+To choose things ahead of time, add options to the address: `?first=2` (who goes first in the first game), `?colors=yellow-green`, `?difficulty=hard`. Combine them with `&`, for example `?colors=yellow-green&difficulty=hard`.
 
 ## Controls (placement)
 
@@ -65,7 +65,15 @@ Details are in [docs/decisions.md](docs/decisions.md).
 
 ## How to Play
 
-Coming in Phase 5, once the game is playable. The official rules summary is in [docs/rules.md](docs/rules.md).
+1. **Start screen:** choose a difficulty and a color set, then press Start. (Playing the computer is coming later.)
+2. **Placement:** each player in turn places one of their 12 pieces until both have placed five. See the placement controls above.
+3. **Movement:** players take turns moving one piece or one chip. See the movement controls above.
+4. **Winning:** you win if your opponent cannot place all five pieces, if all of their pieces are trapped so none can move, or (on Hard) if their clock runs out. If the 60-minute limit runs out on Easy or Medium, the player on the move finishes their turn, the other player gets a matching turn if needed, and the game is a tie unless someone has won by then.
+5. **Clocks and pausing:** the bar above the board shows the clocks. On Medium and Hard, the turn timer flashes after 60 seconds (nothing else happens; tick the box to hear a beep too). **Pause** stops all clocks and hides the board until you press Resume.
+
+The game-over box has **Play again** (same settings, new random first player) and **Back to menu**.
+
+The official rules summary is in [docs/rules.md](docs/rules.md).
 
 ## Project Layout
 

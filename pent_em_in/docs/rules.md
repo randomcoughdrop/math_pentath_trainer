@@ -166,6 +166,13 @@ An **inappropriate challenge (IA)** is one made at the wrong time, or about a pr
 - *Impossible* (off the board, landing on a chip or piece) is always refused. *Violations* are `slide-blocked`, `star-landing`, `chip-blocked`, `chip-repeat`, and `piece-repeat`; Easy refuses them, and later phases make them challengeable.
 - A player whose five pieces all have no legal move loses at the start of their turn.
 
+## Implementation notes: time
+
+- Easy and Medium: a 60-minute game cap. When it runs out, the player on the move finishes their turn; if they moved first in the game, the other player takes one more turn. If nobody has won, the game is a tie.
+- Hard: a 30-minute chess clock for each player. Reaching zero loses.
+- Medium and Hard: a soft reminder after 60 seconds on a turn, with no penalty.
+- Any level: pausing stops all clocks and hides the board.
+
 ---
 
 *© Pentathlon Institute, Inc. These rule highlights are for tournament use only.*

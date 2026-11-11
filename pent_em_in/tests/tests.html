@@ -26,14 +26,16 @@
       getLegalPlacements, hasLegalPlacement, getPossibleMoves, getLegalMoves, isEntrapped,
     } from "../js/moves.js";
     import { snapshotOf, restoreSnapshot } from "../js/history.js";
-    import { applyMove } from "../js/game.js";
+    import { applyMove, callTime, loseOnTime } from "../js/game.js";
+    import { createClock, advanceClock, startTurn, setPaused, formatTime } from "../js/clock.js";
+    import { settingsFromChoices } from "../js/menu.js";
     import {
       newHeldPiece, rotateHeld, flipHeld, cellsAt, computePreview,
       slideTargets, rotateCorners, flipChoices, chipTargets, movementClick, turnMove,
       chooseAction, clearSelection, buildOverlay,
     } from "../js/input.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
-    import { statusMessage, describeEntry } from "../js/ui.js";
+    import { statusMessage, describeEntry, gameOverSummary } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
     import {
       SIDES, slideCells, rotateAboutVertex, flipOverSide, boundingBox,
@@ -917,6 +919,161 @@
       st = applyMove(st, slide(0, "right", 1)).state;
       assert(st.repeat[1].pieceId === 0 && st.repeat[1].count === 2, "piece 0 has a x2 streak");
       assert(st.repeat[2].count === 1);
+    });
+
+
+    // ---------------- Phase 5: clocks, time limits, and the start screen ----------------
+
+    const MINUTE = 60 * 1000;
+
+    test("each difficulty gets the right kind of clock", () => {
+      const easy = createClock(PRESET_LEVELS.easy);
+      const medium = createClock(PRESET_LEVELS.medium);
+      const hard = createClock(PRESET_LEVELS.hard);
+      assert(easy.type === "cap" && easy.limitMs === 60 * MINUTE && easy.turnAlertMs === null, "easy");
+      assert(medium.type === "cap" && medium.limitMs === 60 * MINUTE && medium.turnAlertMs === 60000, "medium");
+      assert(hard.type === "chess" && hard.remainingMs[1] === 30 * MINUTE && hard.remainingMs[2] === 30 * MINUTE && hard.turnAlertMs === 60000, "hard");
+    });
+
+    test("the game cap counts up and reports running out once", () => {
+      const clock = createClock(PRESET_LEVELS.easy);
+      assert(!advanceClock(clock, 59 * MINUTE, 1).capReached);
+      assert(advanceClock(clock, 2 * MINUTE, 1).capReached, "past 60 minutes");
+      assert(!advanceClock(clock, MINUTE, 2).capReached, "only reported once");
+    });
+
+    test("the chess clock only runs down for the player on the move", () => {
+      const clock = createClock(PRESET_LEVELS.hard);
+      advanceClock(clock, 5 * MINUTE, 1);
+      assert(clock.remainingMs[1] === 25 * MINUTE && clock.remainingMs[2] === 30 * MINUTE);
+      advanceClock(clock, 2 * MINUTE, 2);
+      assert(clock.remainingMs[2] === 28 * MINUTE);
+    });
+
+    test("a chess clock that reaches zero reports whose flag fell", () => {
+      const clock = createClock(PRESET_LEVELS.hard);
+      assert(advanceClock(clock, 29 * MINUTE, 2).flagFall === null);
+      const events = advanceClock(clock, 2 * MINUTE, 2);
+      assert(events.flagFall === 2 && clock.remainingMs[2] === 0, "time never goes below zero");
+    });
+
+    test("the turn alert goes off once after 60 seconds on Medium and Hard, and resets each turn", () => {
+      const clock = createClock(PRESET_LEVELS.medium);
+      assert(!advanceClock(clock, 59000, 1).turnAlert);
+      assert(advanceClock(clock, 2000, 1).turnAlert, "after 61 seconds");
+      assert(!advanceClock(clock, 30000, 1).turnAlert, "only once per turn");
+      startTurn(clock);
+      assert(clock.turnMs === 0 && !clock.alerted);
+      assert(advanceClock(clock, 61000, 2).turnAlert, "again on the next turn");
+    });
+
+    test("there is no turn alert on Easy, or on the computer's turns", () => {
+      const easy = createClock(PRESET_LEVELS.easy);
+      assert(!advanceClock(easy, 5 * MINUTE, 1).turnAlert);
+      const medium = createClock(PRESET_LEVELS.medium);
+      assert(!advanceClock(medium, 5 * MINUTE, 2, false).turnAlert);
+    });
+
+    test("a paused clock stops, and starts again when resumed", () => {
+      const clock = createClock(PRESET_LEVELS.hard);
+      setPaused(clock, true);
+      const events = advanceClock(clock, 40 * MINUTE, 1);
+      assert(clock.remainingMs[1] === 30 * MINUTE && clock.elapsedMs === 0 && clock.turnMs === 0);
+      assert(events.flagFall === null && !events.turnAlert);
+      setPaused(clock, false);
+      advanceClock(clock, MINUTE, 1);
+      assert(clock.remainingMs[1] === 29 * MINUTE);
+    });
+
+    test("times are shown as m:ss", () => {
+      assert(formatTime(0) === "0:00" && formatTime(61000) === "1:01" && formatTime(60 * MINUTE) === "60:00");
+      assert(formatTime(1500) === "0:01" && formatTime(1500, { remaining: true }) === "0:02", "remaining rounds up");
+    });
+
+    test("time called on the starting player's turn gives the other player one more turn, then a tie", () => {
+      const state = createInitialState({ startingPlayer: 1 });
+      const called = callTime(state);
+      assert(called.timeCalled && called.timeEndsAfter === 2 && called.phase === "placement");
+      assert(!state.timeCalled, "the old state is unchanged");
+
+      const afterOne = applyMove(called, { type: "place", shape: "I", cells: horizontalI(0, 0) }).state;
+      assert(afterOne.phase === "placement", "one more turn to go");
+      const afterTwo = applyMove(afterOne, { type: "place", shape: "I", cells: horizontalI(8, 0) }).state;
+      assert(afterTwo.phase === "gameover" && afterTwo.winner === null && afterTwo.winReason === "time");
+    });
+
+    test("time called on the second player's turn ends the game after that turn", () => {
+      let state = createInitialState({ startingPlayer: 1 });
+      state = applyMove(state, { type: "place", shape: "I", cells: horizontalI(0, 0) }).state;
+      const called = callTime(state);
+      assert(called.timeEndsAfter === 2);
+      const done = applyMove(called, { type: "place", shape: "I", cells: horizontalI(8, 0) }).state;
+      assert(done.phase === "gameover" && done.winner === null);
+    });
+
+    test("time can be called during movement too", () => {
+      const state = movementState([piece(0, 1, horizontalI(0, 0)), piece(1, 2, horizontalI(8, 8))], { chips: CHIPS_OUT_OF_THE_WAY });
+      const called = callTime(state);
+      const one = applyMove(called, slide(0, "down", 1)).state;
+      assert(one.phase === "movement");
+      const two = applyMove(one, slide(1, "left", 1)).state;
+      assert(two.phase === "gameover" && two.winReason === "time" && two.winner === null);
+    });
+
+    test("a win on the final turn beats the tie", () => {
+      // Player 1 moves first. Time is called; Player 1 moves a chip, which leaves Player 2 trapped.
+      const state = movementState([
+        piece(0, 1, [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9]]),
+        piece(1, 2, horizontalI(0, 0)),
+      ], { chips: [
+        { id: 0, owner: 1, row: 0, col: 5 }, { id: 1, owner: 1, row: 5, col: 6 },
+        { id: 2, owner: 2, row: 6, col: 7 }, { id: 3, owner: 2, row: 5, col: 8 },
+      ] });
+      const result = applyMove(callTime(state), chipMove(1, 5, 7)).state;
+      assert(result.phase === "gameover" && result.winner === 1 && result.winReason === "entrapment");
+    });
+
+    test("callTime does nothing twice, or after the game is over", () => {
+      const state = createInitialState();
+      const once = callTime(state);
+      assert(callTime(once) === once);
+      const over = { ...state, phase: "gameover", winner: 1, winReason: "entrapment" };
+      assert(callTime(over) === over);
+    });
+
+    test("running out of time on a chess clock loses the game", () => {
+      const state = createInitialState({ startingPlayer: 1 });
+      const lost = loseOnTime(state, 2);
+      assert(lost.phase === "gameover" && lost.winner === 1 && lost.winReason === "time");
+      assert(state.phase === "placement", "the old state is unchanged");
+      assert(loseOnTime(lost, 1) === lost, "already over");
+    });
+
+    test("game-over summaries for every ending", () => {
+      const base = createInitialState();
+      const placement = gameOverSummary({ ...base, phase: "gameover", winner: 2, winReason: "placement" });
+      assert(placement.title === "Player 2 (Blue) wins!" && placement.detail.includes("Player 1") && placement.detail.includes("place"));
+      const trapped = gameOverSummary({ ...base, phase: "gameover", winner: 1, winReason: "entrapment" });
+      assert(trapped.detail.includes("trapped"));
+      const flag = gameOverSummary({ ...base, phase: "gameover", winner: 1, winReason: "time" });
+      assert(flag.detail.includes("Player 2") && flag.detail.includes("time"));
+      const tie = gameOverSummary({ ...base, phase: "gameover", winner: null, winReason: "time" });
+      assert(tie.title.includes("tie"));
+    });
+
+    test("the status line announces that time is up", () => {
+      const view = { held: null, hover: null, notice: "", announce: "", selected: null, action: "slide", pivot: null };
+      const message = statusMessage(callTime(createInitialState({ startingPlayer: 1 })), view, null);
+      assert(message.startsWith("Time is up!") && message.includes("Player 2 (Blue)'s turn"), message);
+    });
+
+    test("menu choices become settings, with safe fallbacks", () => {
+      assert(settingsFromChoices("hard", "yellow-green").level === PRESET_LEVELS.hard);
+      assert(settingsFromChoices("hard", "yellow-green").colorScheme === "yellow-green");
+      assert(settingsFromChoices("medium", "red-blue").level === PRESET_LEVELS.medium);
+      assert(settingsFromChoices(undefined, undefined).level === PRESET_LEVELS.easy);
+      assert(settingsFromChoices("easy", "purple").colorScheme === "red-blue");
+      assert(bandForLevel(settingsFromChoices("hard", "red-blue").level) === "hard");
     });
 
     test("rotating the held piece four times returns it; cw then ccw cancels", () => {

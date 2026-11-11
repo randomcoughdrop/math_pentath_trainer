@@ -129,3 +129,100 @@ canvas {
   border-color: #333;
   box-shadow: 0 0 0 3px #ffd54a;
 }
+
+/* ---- Start screen ---- */
+
+#menu fieldset {
+  margin: 0 0 1rem;
+  border: 1px solid #999;
+  border-radius: 4px;
+}
+
+#menu legend {
+  font-weight: bold;
+  padding: 0 0.4rem;
+}
+
+.choice {
+  display: block;
+  padding: 0.35rem 0.25rem;
+  cursor: pointer;
+}
+
+.choice span {
+  display: block;
+  margin-left: 1.6rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.choice.disabled {
+  color: #888;
+  cursor: not-allowed;
+}
+
+#btn-start {
+  min-height: 44px;
+  padding: 0 1.5rem;
+  font-size: 1.1rem;
+}
+
+/* ---- Clocks ---- */
+
+.clock-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-bar button {
+  min-height: 36px;
+}
+
+.clock-player.running {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.sound-option {
+  font-size: 0.9rem;
+}
+
+/* The turn reminder flashes until the turn ends. */
+#clock-turn.alert {
+  font-weight: bold;
+  color: #8a1c00;
+  animation: flash 1s step-start infinite;
+}
+
+@keyframes flash {
+  50% { background: #ffd54a; }
+}
+
+/* ---- Game over and paused ---- */
+
+.gameover {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid #333;
+  border-radius: 4px;
+  background: #fff1a8;
+}
+
+.gameover h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+.gameover p {
+  margin: 0 0 0.5rem;
+}
+
+.gameover button {
+  min-height: 44px;
+  padding: 0 1rem;
+  font-size: 1rem;
+}

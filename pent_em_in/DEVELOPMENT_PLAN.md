@@ -360,7 +360,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
   1. **Entrapment:** all 5 of the opponent's pieces have no valid move (already detected in Phase 4; Phase 5 adds the screen)
   2. **Placement:** the opponent cannot place all 5 pieces (from Phase 3)
   3. **No legal move:** the player to move has nothing legal to do (always the same as entrapment, since every move is a move of a piece or chip)
-- Game-over overlay with the winner and reason; "Play again" and "Back to menu" buttons.
+- Game-over box above the board with the winner and reason; "Play again" and "Back to menu" buttons.
 - Start screen: choose **2 Players** (the CPU option is greyed out until Phase 7), a **difficulty** (three preset buttons: Easy, Medium, Hard), and a color scheme. `bandForLevel` and `BAND_RULES` wire the setting into the rules, but until Phase 6 only Easy behavior is active, so the other bands behave like Easy.
 - `clock.js`:
   - 60-minute game cap on Easy and Medium: on expiry, `game.js` applies the equal-turns rule and declares a tie if nobody has won

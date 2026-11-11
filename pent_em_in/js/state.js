@@ -27,8 +27,10 @@ export function createInitialState(options = {}) {
     strikes: { 1: 0, 2: 0 },
     history: [],
     moveLog: [],
-    winner: null,
-    winReason: null,
+    timeCalled: false, // the game cap ran out; the game ends after timeEndsAfter's turn
+    timeEndsAfter: null,
+    winner: null, // 1, 2, or null (null with phase "gameover" is a tie)
+    winReason: null, // "placement", "entrapment", "time"
   };
 }
 
