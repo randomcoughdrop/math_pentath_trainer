@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 7 (a complete game for two players on one screen or against the computer: start screen, placement, movement, clocks, rule-breaking moves and challenges on Medium and Hard, and a game-over screen). The computer currently plays random moves; a smarter one comes in Phases 8 and 9. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 7 (a complete game for two players on one screen or against the computer: start screen, placement, movement, clocks, rule-breaking moves and challenges on Medium and Hard, and a game-over screen). The computer looks one move ahead; a deeper search comes in Phase 9. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 
@@ -47,7 +47,7 @@ Click one of your own pieces or chips to select it (a yellow outline appears). S
 | Move a chip | Click the chip, then click a marked square. Chips move like a queen in chess. |
 | Deselect | **Deselect** button or `Esc` |
 
-Only legal moves are marked, since Easy rules refuse anything else. A small **×2** badge on a piece means its owner has moved it twice in a row, so it can't be moved a third time. The move log on the right records every move. The game ends when a player's pieces are all trapped.
+Only legal moves are marked, since Easy rules refuse anything else. A small **×2** badge on a piece means its owner has moved it twice in a row, so it can't be moved a third time. The move log on the right has a column for each player, listing the letter of each piece they moved (O for a chip); hover over an entry for the full description. The game ends when a player's pieces are all trapped.
 
 To run the tests, open `tests/tests.html` the same way (for example `http://localhost:8000/pent_em_in/tests/tests.html`).
 
@@ -65,7 +65,7 @@ Details are in [docs/decisions.md](docs/decisions.md).
 
 ## Playing the Computer
 
-Choose **Play the computer** on the start screen, and who goes first. You are Player 1 and the computer is Player 2. It moves after a short pause, and the squares it just played on are outlined in yellow. On Medium it sometimes breaks a rule (watch for it and challenge!) and challenges you most of the time you do. On Hard it never breaks a rule and challenges every rule break. For now its moves are random. See [docs/ai.md](docs/ai.md), including the `?level=` address option for trying any difficulty from 0 to 100.
+Choose **Play the computer** on the start screen, and who goes first. You are Player 1 and the computer is Player 2. It moves after a short pause, and the squares it just played on are outlined in yellow. On Medium it sometimes breaks a rule (watch for it and challenge!) and challenges you most of the time you do. On Hard it never breaks a rule and challenges every rule break. Higher levels play better, and Medium and Hard sometimes play a near-best move instead of the best. See [docs/ai.md](docs/ai.md), including the `?level=` address option for trying any difficulty from 0 to 100.
 
 ## Challenges (Medium and Hard)
 

@@ -164,7 +164,7 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 **UI:**
 - `input.js` keeps pure helpers that work out what can be clicked (`slideTargets`, `rotateCorners`, `rotateTurns`, `flipChoices`, `chipTargets`) from the list of legal moves, `movementClick` (selects, picks a pivot, or returns a finished move), and `buildOverlay`, which tells the renderer what to mark. `legalMovesFor(state)` works out the legal moves once per state.
 - `renderer.js` draws the selection outline, dots on clickable squares, dots on pivot corners, see-through ghosts, and the ×2 streak badge. `vertexFromPoint` finds the grid corner under a click.
-- `ui.js` builds the status line and the move log text (`describeEntry`) and shows or hides the placement and movement buttons. The piece trays are hidden once placement is over.
+- `ui.js` builds the status line and the move log (a two-column table of piece letters, `logCell`, with the full sentence from `describeEntry` as hover text) and shows or hides the placement and movement buttons. The piece trays are hidden once placement is over.
 
 ## Phase 5: Endings, Clocks, and the Start Screen
 
@@ -186,6 +186,10 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 **Pausing** is page-only: `view.paused` stops the clock (`setPaused`) and hides the board and controls, so the position can't be studied while the clocks are stopped.
 
 **The start screen** (`menu.js`) turns radio-button choices into settings (`settingsFromChoices`), and `main.js` `startGame` builds the state and clock from them. "Play again" starts a new game with the same settings; "Back to menu" returns to the start screen.
+
+## Phase 8: Evaluation and Search
+
+`ai/mobility.js` lists legal moves quickly and builds cheap "what if" positions; `ai/evaluate.js` scores a position by freedom to move; `ai/search.js` looks one move ahead. `ai/cpu.js` uses them for movement, placement, and the choices after a challenge. Details and weights are in [ai.md](ai.md).
 
 ## Phase 7: The Computer
 

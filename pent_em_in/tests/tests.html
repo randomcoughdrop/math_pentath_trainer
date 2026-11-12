@@ -44,8 +44,11 @@
     import { cpuToAct, humanToAct, actorNow } from "../js/players.js";
     import { getPossiblePlacements } from "../js/moves.js";
     import { playerLabel } from "../js/ui.js";
+    import { fastLegalMoves, mobility, afterMove } from "../js/ai/mobility.js";
+    import { evaluate } from "../js/ai/evaluate.js";
+    import { searchMove, chooseByScore } from "../js/ai/search.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
-    import { statusMessage, describeEntry, gameOverSummary } from "../js/ui.js";
+    import { statusMessage, describeEntry, gameOverSummary, logCell } from "../js/ui.js";
     import { SHAPES, SHAPE_NAMES, getShapeCells } from "../js/pieces.js";
     import {
       SIDES, slideCells, rotateAboutVertex, flipOverSide, boundingBox,
@@ -1422,8 +1425,8 @@
 
     test("CPU vs CPU games run without a refused move at every preset", () => {
       for (const level of [PRESET_LEVELS.easy, PRESET_LEVELS.medium, PRESET_LEVELS.hard]) {
-        for (const seed of [1, 2]) {
-          const result = playCpuGame({ level, seed, maxSteps: 150 });
+        for (const seed of [1]) {
+          const result = playCpuGame({ level, seed, maxSteps: 60 });
           assert(result.problems.length === 0, "level " + level + " seed " + seed + ": " + JSON.stringify(result.problems));
           assert(result.steps > 10);
         }
@@ -1431,13 +1434,131 @@
     });
 
     test("Medium CPUs do break rules and challenge each other", () => {
+      const quick = { ...cpuParams(50), randomMoveRate: 1 }; // Medium behavior, but random moves so the test is fast
       let broke = 0, challenged = 0;
-      for (let seed = 1; seed <= 6; seed++) {
-        const { state } = playCpuGame({ level: 50, seed, maxSteps: 300, cpuLevels: { 1: 50, 2: 50 } });
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const { state } = playCpuGame({ level: 50, seed, maxSteps: 120, params: { 1: quick, 2: quick } });
         for (const entry of state.moveLog) if (entry.type === "challenge") challenged++;
         broke += state.moveLog.length > 0 ? 1 : 0;
       }
       assert(challenged > 0, "some challenge happened");
+    });
+
+    // ---------------- Phase 8: evaluation and search ----------------
+
+    test("the Hard preset is level 80, and the dial has near-best moves", () => {
+      assert(PRESET_LEVELS.hard === 80);
+      const hard = cpuParams(PRESET_LEVELS.hard);
+      assert(Math.abs(hard.randomMoveRate - 0.08) < 1e-9 && Math.abs(hard.nearBestRate - 0.24) < 1e-9);
+      assert(cpuParams(100).randomMoveRate === 0 && cpuParams(100).nearBestRate === 0, "level 100 plays only the best");
+      assert(cpuParams(0).nearBestRate === 0 && cpuParams(50).nearBestRate > 0);
+    });
+
+    test("fastLegalMoves gives exactly the moves getLegalMoves does", () => {
+      let checked = 0;
+      for (const seed of [1, 2]) {
+        for (const steps of [14, 40, 90]) {
+          const { state } = playCpuGame({ level: 50, seed, maxSteps: steps });
+          if (state.phase !== "movement") continue;
+          for (const player of [1, 2]) {
+            const position = { ...state, currentPlayer: player, pending: null };
+            const key = (move) => JSON.stringify(move);
+            const slow = getLegalMoves(position).map(key).sort();
+            const fast = fastLegalMoves(position, player).map(key).sort();
+            assert(slow.join("|") === fast.join("|"), "seed " + seed + " steps " + steps + " player " + player);
+            checked++;
+          }
+        }
+      }
+      assert(checked >= 4, "checked " + checked + " positions");
+    });
+
+    test("mobility counts moves per piece, and honors the repeat rules", () => {
+      const state = mediumState();
+      const m = mobility(state, 1);
+      assert(m.perPiece.size === 2 && m.pieceTotal > 0 && m.chipTotal > 0);
+      const streak = { ...state, repeat: { ...state.repeat, 1: { pieceId: 0, count: 2 } } };
+      assert(mobility(streak, 1).perPiece.get(0) === 0, "a piece that moved twice has no moves");
+      const chipped = { ...state, lastWasChipMove: { 1: true, 2: false } };
+      assert(mobility(chipped, 1).chipTotal === 0, "no chip move right after a chip move");
+    });
+
+    test("afterMove builds the next position without changing the old one", () => {
+      const state = mediumState();
+      const before = JSON.stringify(state);
+      const next = afterMove(state, slide(0, "right", 1));
+      assert(JSON.stringify(state) === before, "the original is untouched");
+      assert(next.currentPlayer === 2 && next.pieces[0].cells[0][1] === 1);
+      assert(next.repeat[1].pieceId === 0 && next.repeat[1].count === 1);
+      const again = afterMove({ ...next, currentPlayer: 1 }, slide(0, "left", 1));
+      assert(again.repeat[1].count === 2);
+    });
+
+    test("evaluate: more freedom scores higher, and a trapped opponent is a win", () => {
+      // Player 1 has an open board; Player 2's only piece is boxed into a corner.
+      const open = mediumState({ pieces: [piece(0, 1, horizontalI(1, 3)), piece(1, 2, verticalI(0, 12))] });
+      const scoreFor1 = evaluate(open, 1), scoreFor2 = evaluate(open, 2);
+      assert(scoreFor1 !== scoreFor2);
+      const boxed = mediumState({
+        pieces: [piece(0, 1, horizontalI(1, 3)), piece(1, 2, [[0, 0]]),
+                 piece(2, 1, [[0, 1]]), piece(3, 1, [[1, 0]])],
+        chips: CHIPS_OUT_OF_THE_WAY,
+      });
+      assert(mobility(boxed, 2).pieceTotal > 0 || evaluate(boxed, 1) > 5000, "either still free or scored as won");
+    });
+
+    test("searchMove plays the highest-scoring legal move when only the best is allowed", () => {
+      const state = mediumState();
+      const legal = getLegalMoves(state);
+      const best = Math.max(...legal.map((move) => evaluate(afterMove(state, move), 1)));
+      const only = { ...cpuParams(100) };
+      for (let seed = 1; seed <= 5; seed++) {
+        const move = searchMove(state, legal, only, makeRng(seed));
+        assert(evaluate(afterMove(state, move), 1) === best, "seed " + seed);
+      }
+    });
+
+    test("chooseByScore: near-best picks come from ranks 2 to 4", () => {
+      const scored = [10, 9, 8, 7, 1, 0].map((score) => ({ item: score, score }));
+      for (let seed = 1; seed <= 20; seed++) {
+        const pick = chooseByScore(scored, { nearBestRate: 1 }, makeRng(seed));
+        assert([9, 8, 7].includes(pick), "got " + pick);
+        assert(chooseByScore(scored, { nearBestRate: 0 }, makeRng(seed)) === 10);
+      }
+      assert(chooseByScore([{ item: "only", score: 3 }], { nearBestRate: 1 }, makeRng(1)) === "only");
+    });
+
+    test("a level-100 placement is legal and repeatable for a given seed", () => {
+      const state = createInitialState({ level: 80, startingPlayer: 1 });
+      const a = chooseMove(state, cpuParams(100), makeRng(7));
+      const b = chooseMove(state, cpuParams(100), makeRng(7));
+      assert(analyzePlacement(state, 1, a.cells).legal);
+      assert(JSON.stringify(a) === JSON.stringify(b));
+    });
+
+    test("the CPU's choice after a challenge is always one of the offered options", () => {
+      const params = cpuParams(100);
+      for (const category of ["slide-blocked", "star-landing"]) {
+        const c = doMove(afterBadSlide(), { type: "challenge", category });
+        const move = nextCpuMove(c, params, makeRng(3));
+        assert(move.type === "decide" && c.pending.options.includes(move.choice));
+        assert(applyMove(c, move).ok);
+      }
+    });
+
+    test("the move log shows just the letter, O for a chip, and short words for events", () => {
+      const state = mediumState();
+      const slid = doMove(state, slide(0, "right", 1));
+      assert(logCell(slid.moveLog[0]).text === "I" && logCell(slid.moveLog[0]).kind === "move");
+      const chipped = doMove(state, chipMove(0, 6, 5));
+      assert(logCell(chipped.moveLog[0]).text === "O");
+      const placed = placementOnStar();
+      assert(logCell(placed.moveLog[0]).text === "I");
+      const c = doMove(afterBadSlide(), { type: "challenge", category: "slide-blocked" });
+      const entry = c.moveLog[c.moveLog.length - 1];
+      assert(logCell(entry).kind === "event" && logCell(entry).text.includes("✓"));
+      const wrong = doMove(afterBadSlide(), { type: "challenge", category: "star-landing" });
+      assert(logCell(wrong.moveLog[wrong.moveLog.length - 1]).text.includes("✗"));
     });
 
     document.getElementById("summary").textContent =

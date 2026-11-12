@@ -57,7 +57,7 @@ CPU strength comes from the same number. Starting values, with straight-line int
 | 75 | 10% | 3 |
 | 100 | 0% | 4 (limited by a time budget) |
 
-Preset levels (in `constants.js`): Easy = 15, Medium = 50, Hard = 90.
+Preset levels (in `constants.js`): Easy = 15, Medium = 50, Hard = 80 (changed from 90 in Phase 8).
 
 ## Challenge Categories
 
@@ -171,3 +171,24 @@ Three incorrect challenges is an automatic loss.
 | Pending choices | The CPU chooses at random for now; Phase 8 may pick sensibly. |
 | Piece choice | When placing, the CPU picks a shape first, then a position, so it isn't biased toward shapes with many positions. |
 | Speed fix | `copyState` shares history snapshots; a 600-move game went from minutes to seconds. |
+
+## Phase 8 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Hard preset | Level 80 instead of 90, so the top of the dial (100) is still stronger than Hard. |
+| Near-best moves | Of the moves that aren't random, `nearBestRate` of the time the CPU plays the 2nd to 4th best move. The rate is 0 at level 0 and level 100, so level 100 only ever plays the best. |
+| Evaluation | Freedom to move (see `ai.md`). A piece that has moved twice in a row counts as having no moves, which gives the "avoid my own third repeat" penalty without a special rule. |
+| Placement | The CPU scores a random sample of 60 legal placements instead of every one (there can be thousands). Shapes are not ranked in advance: the score of each placement decides. |
+| Search depth | `searchDepth` is ignored until Phase 9; every non-random level looks one move ahead. |
+| Challenge choices | Scored by a one-move lookahead on each option, without the near-best randomness. |
+| Simulation | Games that hit the step limit are decided by who has more freedom to move, and reported separately from real wins. |
+
+## Move Log Format
+
+| Topic | Decision |
+|---|---|
+| Layout | A table with one column per player, each listing that player's moves in order. |
+| Entries | Just the piece letter (O for a chip). A piece placed for a player after a challenge is in that player's column. |
+| Other events | Challenges, challenged wins, and decisions show a short italic word (for example "challenge ✓"), since they have no letter. |
+| Detail | The full sentence (direction, distance, rows and columns) is the hover text on each entry. |

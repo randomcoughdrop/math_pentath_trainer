@@ -80,7 +80,7 @@ Starting values to tune by playing, with straight-line interpolation between row
 | 75 | 10% | 3 |
 | 100 | 0% | 4 (limited by a time budget) |
 
-Each preset button sets `level` to a value defined in `PRESET_LEVELS` (starting values: Easy = 15, Medium = 50, Hard = 90). Change those numbers, or the table above, to retune the CPU without touching any other code. In Player vs Player only the band matters (rules and clocks); the CPU numbers are ignored.
+Each preset button sets `level` to a value defined in `PRESET_LEVELS` (starting values: Easy = 15, Medium = 50, Hard = 80). Change those numbers, or the table above, to retune the CPU without touching any other code. In Player vs Player only the band matters (rules and clocks); the CPU numbers are ignored.
 
 To keep Medium and Hard fair, the game always shows a small streak badge (for example "×2") on a piece that has been moved twice in a row, so the repetition rule stays visible.
 
@@ -200,7 +200,7 @@ export const BAND_RULES = {
   hard:   { blockViolations: false, challenges: true,  turnAlertSec: 60,   clock: { type: "chess", minutes: 30 } },
 };
 export function bandForLevel(level) { /* 0-33 easy, 34-66 medium, 67-100 hard */ }
-export const PRESET_LEVELS = { easy: 15, medium: 50, hard: 90 };   // the only place the dial is set
+export const PRESET_LEVELS = { easy: 15, medium: 50, hard: 80 };   // the only place the dial is set
 ```
 
 ```js
@@ -413,7 +413,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 
 ---
 
-### Phase 8: CPU Evaluation and Shallow Search
+### Phase 8: CPU Evaluation and Shallow Search ✅ Done
 **Goal:** A CPU that plays sensibly when it is not picking randomly.
 
 - `ai/evaluate.js`: score a position from a player's point of view. Start simple, tune later:
@@ -440,7 +440,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 - Run the search in a **Web Worker** (`ai/worker.js`) so the page never freezes.
 - Iterative deepening with a time budget (for example 1 second). On Hard, scale the budget to the CPU's remaining chess-clock time so it never loses on time.
 
-**Done when:** A level-90 CPU clearly beats a level-50 CPU, and move time stays under the budget on a phone.
+**Done when:** A level-80 CPU clearly beats a level-50 CPU, and move time stays under the budget on a phone.
 **Docs:** `ai.md` explains the search; document the performance numbers.
 
 ---

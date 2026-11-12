@@ -60,7 +60,7 @@ export const BAND_RULES = {
 };
 
 // The only place the difficulty dial (0 to 100) is set. Tune these freely.
-export const PRESET_LEVELS = { easy: 15, medium: 50, hard: 90 };
+export const PRESET_LEVELS = { easy: 15, medium: 50, hard: 80 };
 
 // 0-33 is easy, 34-66 is medium, 67-100 is hard.
 export function bandForLevel(level) {

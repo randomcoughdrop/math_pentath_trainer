@@ -7,8 +7,11 @@ import { getPossiblePlacements, getPossibleMoves, getLegalPlacements } from "../
 import { canChallenge, canChallengeWin } from "../challenges.js";
 import { challengesEnabled, isStar, occupiedSquares, squareKey } from "../rules.js";
 import { COLS, ROWS } from "../constants.js";
-import { searchMove } from "./search.js";
+import { searchMove, chooseByScore } from "./search.js";
+import { evaluate } from "./evaluate.js";
+import { afterMove, fastLegalMoves } from "./mobility.js";
 import { pickRandom } from "./random.js";
+import { otherPlayer } from "../state.js";
 
 // --- choosing a move on its own turn ---
 
@@ -18,21 +21,54 @@ export function chooseMove(state, params, rng = Math.random) {
     : chooseMovement(state, params, rng);
 }
 
-// Random shape, orientation, and position. Sometimes (Medium) a rule-breaking one.
+const PLACEMENT_SAMPLE = 60; // how many legal placements to score each turn
+
+// Sometimes (Medium) a rule-breaking placement; sometimes a random legal one;
+// otherwise the best of a sample of legal placements, scored by how much freedom
+// it leaves each side (see evaluate.js).
 function choosePlacement(state, params, rng) {
   const player = state.currentPlayer;
   const possible = getPossiblePlacements(state, player);
   const legal = possible.filter((placement) => placement.analysis.legal);
   const broken = possible.filter((placement) => !placement.analysis.legal);
 
-  const pool = wantsToBreakRules(state, params, rng, broken) ? broken : legal;
+  const breaking = wantsToBreakRules(state, params, rng, broken);
+  const pool = breaking ? broken : legal;
   const choices = pool.length > 0 ? pool : possible;
   if (choices.length === 0) return null;
 
-  // Pick the shape first, so shapes with many positions aren't favored.
-  const shape = pickRandom([...new Set(choices.map((placement) => placement.shape))], rng);
-  const chosen = pickRandom(choices.filter((placement) => placement.shape === shape), rng);
+  let chosen;
+  if (breaking || pool.length === 0 || rng() < params.randomMoveRate) {
+    // Pick the shape first, so shapes with many positions aren't favored.
+    const shape = pickRandom([...new Set(choices.map((placement) => placement.shape))], rng);
+    chosen = pickRandom(choices.filter((placement) => placement.shape === shape), rng);
+  } else {
+    chosen = chooseByScore(scorePlacements(state, sample(choices, PLACEMENT_SAMPLE, rng)), params, rng);
+  }
   return { type: "place", shape: chosen.shape, cells: chosen.cells };
+}
+
+// Up to `count` items picked at random from a list.
+function sample(list, count, rng) {
+  if (list.length <= count) return list;
+  const copy = [...list];
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(rng() * (copy.length - i));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, count);
+}
+
+// Score each placement by the position it makes (as if the game were in movement).
+function scorePlacements(state, placements) {
+  const me = state.currentPlayer;
+  return placements.map((placement) => {
+    const after = {
+      ...state,
+      pieces: [...state.pieces, { id: "trial", owner: me, shape: placement.shape, cells: placement.cells }],
+    };
+    return { item: placement, score: evaluate(after, me) };
+  });
 }
 
 function chooseMovement(state, params, rng) {
@@ -43,7 +79,7 @@ function chooseMovement(state, params, rng) {
   if (wantsToBreakRules(state, params, rng, broken)) return pickRandom(broken, rng);
   if (legal.length === 0) return broken.length > 0 && challengesEnabled(state) ? pickRandom(broken, rng) : null;
   if (rng() < params.randomMoveRate) return pickRandom(legal, rng);
-  return searchMove(state, legal, params.searchDepth, rng);
+  return searchMove(state, legal, params, rng);
 }
 
 function wantsToBreakRules(state, params, rng, broken) {
@@ -70,11 +106,40 @@ export function shouldChallengeWin(state, params, rng = Math.random) {
 
 // --- the choices after a challenge ---
 
-function respondToPending(state, rng) {
+// Who moves next for each choice, and whether they must move a pentomino
+// (this mirrors decide() in challenges.js).
+function whoMoves(pending, choice) {
+  const correct = pending.outcome === "correct";
+  if (correct) return choice === "take-turn"
+    ? { mover: pending.challenger, piecesOnly: false }
+    : { mover: pending.offender, piecesOnly: true };
+  return choice === "lose-turn"
+    ? { mover: pending.offender, piecesOnly: false }
+    : { mover: pending.challenger, piecesOnly: true };
+}
+
+// Look one move ahead on each choice: if I move, assume my best move; if the
+// opponent moves, assume their reply is the worst one for me. Then pick like a move.
+function chooseDecision(state, params, rng) {
+  const me = state.pending.chooser;
+  const scored = state.pending.options.map((choice) => {
+    const { mover, piecesOnly } = whoMoves(state.pending, choice);
+    const position = { ...state, currentPlayer: mover, mustMovePiece: piecesOnly };
+    const moves = fastLegalMoves(position, mover, piecesOnly);
+    if (moves.length === 0) return { item: choice, score: evaluate(position, me) };
+    const results = moves.map((move) => evaluate(afterMove(position, move), me));
+    return { item: choice, score: mover === me ? Math.max(...results) : Math.min(...results) };
+  });
+  // The decision is a rare, important choice, so it uses the stronger setting:
+  // random only if the level is very low.
+  return rng() < params.randomMoveRate ? pickRandom(state.pending.options, rng) : chooseByScore(scored, { ...params, nearBestRate: 0 }, rng);
+}
+
+function respondToPending(state, params, rng) {
   const pending = state.pending;
 
   if (pending.kind === "choose") {
-    return { type: "decide", choice: pickRandom(pending.options, rng) };
+    return { type: "decide", choice: chooseDecision(state, params, rng) };
   }
 
   if (pending.kind === "place-for") {
@@ -105,7 +170,7 @@ export function nextCpuMove(state, params, rng = Math.random) {
   if (state.phase === "gameover") {
     return shouldChallengeWin(state, params, rng) ? { type: "challenge-win" } : null;
   }
-  if (state.pending) return respondToPending(state, rng);
+  if (state.pending) return respondToPending(state, params, rng);
 
   const category = shouldChallenge(state, params, rng);
   if (category) return { type: "challenge", category };

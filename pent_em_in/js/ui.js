@@ -226,16 +226,56 @@ function cornerName(cells, pivot) {
   return found.name + " corner of row " + (found.cell[0] + 1) + ", col " + (found.cell[1] + 1);
 }
 
-// Rebuild the numbered list from the state's move log.
-export function renderLog(list, state) {
-  list.textContent = "";
-  for (const entry of state.moveLog) {
-    const item = document.createElement("li");
-    item.textContent = describeEntry(state, entry);
-    list.appendChild(item);
+// What one log entry looks like in its player's column: { text, kind }.
+// A move is just the letter of the piece (O for a chip). The few other events
+// get a short word, and the full sentence is always in the hover text.
+export function logCell(entry) {
+  if (["place", "slide", "flip", "rotate"].includes(entry.type)) return { text: entry.shape, kind: "move" };
+  if (entry.type === "chip" || entry.type === "relocate-chip") return { text: "O", kind: "move" };
+  if (entry.type === "challenge") return { text: entry.correct ? "challenge ✓" : "challenge ✗", kind: "event" };
+  if (entry.type === "challenge-win") return { text: entry.correct ? "win challenge ✓" : "win challenge ✗", kind: "event" };
+  if (entry.type === "decision") {
+    const text = entry.choice === "take-turn" ? "took turn"
+      : entry.choice === "lose-turn" ? "other loses turn" : "forced piece move";
+    return { text, kind: "event" };
   }
+  return { text: "?", kind: "event" };
+}
+
+// Rebuild the move log: a table with one column per player, each listing that
+// player's moves in order.
+export function renderLog(table, state) {
+  table.textContent = "";
+
+  const head = table.createTHead().insertRow();
+  for (const player of [1, 2]) {
+    const heading = document.createElement("th");
+    heading.scope = "col";
+    heading.textContent = playerLabel(state, player);
+    head.appendChild(heading);
+  }
+
+  const columns = { 1: [], 2: [] };
+  for (const entry of state.moveLog) columns[entry.player].push(entry);
+
+  const body = table.createTBody();
+  const rows = Math.max(columns[1].length, columns[2].length);
+  for (let i = 0; i < rows; i++) {
+    const row = body.insertRow();
+    for (const player of [1, 2]) {
+      const cell = row.insertCell();
+      const entry = columns[player][i];
+      if (!entry) continue;
+      const { text, kind } = logCell(entry);
+      cell.textContent = text;
+      cell.className = kind;
+      cell.title = describeEntry(state, entry);
+    }
+  }
+
+  table.dataset.count = String(state.moveLog.length);
   // Keep the newest move in view.
-  if (list.parentElement) list.parentElement.scrollTop = list.parentElement.scrollHeight;
+  if (table.parentElement) table.parentElement.scrollTop = table.parentElement.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------

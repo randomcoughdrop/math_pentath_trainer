@@ -120,7 +120,7 @@ function startGame(chosen) {
   for (const player of [1, 2]) {
     $("tray-title-" + player).textContent = playerLabel(state, player);
   }
-  moveLog.textContent = "";
+  renderLog(moveLog, state); // new column headings and an empty log
 
   menu.hidden = true;
   gameScreen.hidden = false;
@@ -160,7 +160,7 @@ function draw() {
   updateControls(state, view, preview, legal, buttons, panels, trayBoxes);
 
   // Only rebuild the log when it has changed.
-  if (moveLog.childElementCount !== state.moveLog.length) renderLog(moveLog, state);
+  if (moveLog.dataset.count !== String(state.moveLog.length)) renderLog(moveLog, state);
 
   gameOverBox.hidden = state.phase !== "gameover";
   if (state.phase === "gameover") {

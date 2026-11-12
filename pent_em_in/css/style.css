@@ -83,10 +83,38 @@ h2 {
   background: #fbfaf5;
 }
 
-.log-panel ol {
-  margin: 0;
-  padding: 0.4rem 0.5rem 0.4rem 2rem;
-  font-size: 0.85rem;
+.move-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.move-table th {
+  position: sticky;
+  top: 0;
+  padding: 0.3rem 0.5rem;
+  background: #ece8da;
+  border-bottom: 1px solid #999;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.move-table td {
+  padding: 0.15rem 0.5rem;
+  width: 50%;
+  border-bottom: 1px solid #e6e2d4;
+}
+
+.move-table td.move {
+  font-weight: bold;
+  font-family: monospace;
+  font-size: 1rem;
+}
+
+.move-table td.event {
+  color: #666;
+  font-style: italic;
+  font-size: 0.8rem;
 }
 
 canvas {
