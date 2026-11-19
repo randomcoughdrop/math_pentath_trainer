@@ -1,6 +1,6 @@
 // Status text, buttons, and the move log (the page, not the canvas).
 
-import { COLOR_SCHEMES, PIECES_PER_PLAYER } from "./constants.js";
+import { COLOR_SCHEMES, PIECES_PER_PLAYER, bandForLevel } from "./constants.js";
 import { otherPlayer } from "./state.js";
 import { movesForPiece, rotateTurns, isPlacingNow, placementOwner, usesFreeMoves } from "./input.js";
 import { formatTime } from "./clock.js";
@@ -168,7 +168,7 @@ function movementMessage(state, view, legal) {
     }
 
     const streak = state.repeat[state.currentPlayer];
-    if (streak.pieceId === piece.id && streak.count >= 2) {
+    if (streak.pieceId === piece.id && streak.count >= 2 && bandForLevel(state.settings.level) !== "hard") {
       message += challengesEnabled(state)
         ? " (It has moved twice in a row. Moving it again breaks the three-in-a-row rule.)"
         : " (It has moved twice in a row, so it has to stay put this turn.)";

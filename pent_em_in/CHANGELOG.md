@@ -1,6 +1,7 @@
 # Changelog
 
 ## After Phase 10
+- Hard: no more "moved twice in a row" reminder.
 - Hard: clicking another of your pieces or chips while carrying a piece switches to it.
 - Hard: the piece ghost never turns grey and the Place button stays available, so the game doesn't hint that a placement or move is wrong (impossible ones are still refused when you try).
 - The 270° turn is now -90° (a quarter turn the other way). Same move, clearer name.
