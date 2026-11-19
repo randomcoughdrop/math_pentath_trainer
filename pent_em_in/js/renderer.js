@@ -270,7 +270,8 @@ function drawPieces(ctx, state, { cell }, colors, dimmed = [], animation = null,
 // through every square (a shape cue, so it never depends on telling colors apart).
 function drawGhost(ctx, state, { cell }, colors, preview) {
 
-  if (preview.ok) {
+  // "plain" previews (Hard) never warn: the piece always looks the same.
+  if (preview.ok || preview.plain) {
     ctx.globalAlpha = 0.6;
     drawCells(ctx, preview.cells, 0, 0, cell, colors[preview.owner ?? state.currentPlayer]);
     ctx.globalAlpha = 1;

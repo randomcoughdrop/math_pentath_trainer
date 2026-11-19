@@ -82,7 +82,7 @@ export function computePreview(state, held, hover) {
   const cells = cellsAt(held, hover.row, hover.col);
   const analysis = analyzePlacement(state, owner, cells);
   const ok = state.pending ? analysis.legal : isAllowed(state, analysis);
-  return { cells, ok, message: analysis.message, owner };
+  return { cells, ok, message: analysis.message, owner, plain: bandForLevel(state.settings.level) === "hard" };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ export function computeFreePreview(state, view, legal) {
   const piece = state.pieces.find((candidate) => candidate.id === view.selected.id);
   if (!piece) return null;
   const cells = cellsAt(view.free, view.hover.row, view.hover.col);
-  return { cells, ok: resolveFreeMove(legal, piece, cells) !== null, owner: piece.owner };
+  return { cells, ok: resolveFreeMove(legal, piece, cells) !== null, owner: piece.owner, plain: true };
 }
 
 const sameSquare = (a, b) => a[0] === b[0] && a[1] === b[1];
@@ -329,7 +329,7 @@ export function movementClick(state, view, legal, cell, vertex) {
   return null;
 }
 
-// The move for a turn button (90, 180, or 270 degrees), if there is one.
+// The move for a turn button (90, 180, or -90 degrees), if there is one.
 export function turnMove(state, view, legal, quarterTurns) {
   if (!view.selected || view.selected.kind !== "piece" || !view.pivot) return null;
   return movesForPiece(legal, view.selected.id).find((move) =>
@@ -380,6 +380,17 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     return Boolean(state) && !cpuToAct(state) && usesFreeMoves(state)
       && Boolean(view.selected) && view.selected.kind === "piece" && Boolean(view.free);
   };
+
+  function wantsToSwitch(state, square) {
+    if (!square) return false;
+    const covering = state.pieces.find((piece) => piece.id !== view.selected.id && piece.owner === state.currentPlayer
+      && piece.cells.some(([row, col]) => row === square.row && col === square.col));
+    const chip = state.chips.find((candidate) => candidate.owner === state.currentPlayer
+      && candidate.row === square.row && candidate.col === square.col);
+    if (!covering && !chip) return false;
+    const piece = state.pieces.find((candidate) => candidate.id === view.selected.id);
+    return !resolveFreeMove(playableMovesFor(state), piece, cellsAt(view.free, square.row, square.col));
+  }
 
   // Drop the free piece where the ghost is, if that is one slide, turn, or flip.
   function commitFree() {
@@ -478,6 +489,13 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
       return;
     }
     if (state.pending && state.pending.kind === "choose") return;
+
+    // Clicking a different piece or chip of yours picks that up instead (unless
+    // dropping the carried piece on that square is a real move).
+    if (freeMoving() && wantsToSwitch(state, squareUnderPointer(event))) {
+      clearSelection(view);
+      view.hover = null;
+    }
 
     if (freeMoving()) {
       const square = squareUnderPointer(event);

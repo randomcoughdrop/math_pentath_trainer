@@ -39,7 +39,7 @@ Keyboard only: after picking a piece, the arrow keys move the ghost and `Enter` 
 
 ## Hard: Free Moves
 
-On Hard there are no hints for slides, turns, or flips. Click a piece: it fades to a faint ghost where it stood, and a stronger ghost follows your pointer. Turn it with `R`/`Shift+R`, flip it with `F`, then click to drop it. If the piece can't get there with one slide, turn, or flip, the drop is refused. Arrow keys and Enter work too.
+On Hard there are no hints for slides, turns, or flips. Click a piece: it fades to a faint ghost where it stood, and a stronger ghost follows your pointer. Turn it with `R`/`Shift+R`, flip it with `F`, then click to drop it. If the piece can't get there with one slide, turn, or flip, the drop is refused. Clicking a different piece or chip of yours switches to it (unless dropping the carried piece on that square is a real move); `Esc` puts the piece back. Arrow keys and Enter work too.
 
 ## Extras
 

@@ -50,7 +50,7 @@ function turnMessage(state, view, preview, legal) {
   if (!view.held) {
     const number = state.placedCount[player] + 1;
     message = who + ": choose a piece from your tray (piece " + number + " of " + PIECES_PER_PLAYER + ").";
-  } else if (preview && !preview.ok) {
+  } else if (preview && !preview.ok && !preview.plain) {
     message = who + ": " + preview.message;
   } else if (preview) {
     message = who + ": click to place the " + view.held.shape + " here (on a touch screen, tap the same square again or press Place).";
@@ -129,6 +129,11 @@ export function decisionLabel(state, choice) {
   return "Move one of " + playerLabel(state, forced) + "'s pentominoes";
 }
 
+// Quarter turns are named 90°, 180°, and -90° (a turn the other way).
+function turnLabel(quarterTurns) {
+  return quarterTurns === 3 ? "-90°" : quarterTurns * 90 + "°";
+}
+
 function movementMessage(state, view, legal) {
   // After a challenge, the challenge winner chooses a move for the other player's piece.
   const who = state.forcedBy
@@ -150,14 +155,14 @@ function movementMessage(state, view, legal) {
     if (movesForPiece(legal, piece.id).length === 0) {
       message = who + ": " + name + " has no legal move right now. Pick another piece" + (state.forcedBy ? "." : " or a chip.");
     } else if (view.free) {
-      message = who + ": move " + name + " where you want it. R turns it, F flips it, click to drop it, Esc to pick it up again.";
+      message = who + ": move " + name + " where you want it. R turns it, F flips it, click to drop it. Click another piece or chip of yours to switch to it, or press Esc to put it back.";
     } else if (view.action === "slide") {
       message = who + ": click a marked square to slide " + name + " there, or choose Rotate or Flip.";
     } else if (view.action === "rotate" && !view.pivot) {
       message = who + ": click a marked corner to rotate " + name + " around.";
     } else if (view.action === "rotate") {
       const turns = rotateTurns(legal, piece.id, view.pivot);
-      message = who + ": choose how far to turn " + name + " (" + turns.map((q) => q * 90 + "°").join(", ") + ").";
+      message = who + ": choose how far to turn " + name + " (" + turns.map(turnLabel).join(", ") + ").";
     } else {
       message = who + ": click a see-through copy to flip " + name + " that way.";
     }
@@ -193,7 +198,7 @@ export function describeEntry(state, entry) {
   if (entry.type === "slide") return who + " slid the " + entry.shape + " " + entry.direction + " " + entry.distance + ".";
   if (entry.type === "flip") return who + " flipped the " + entry.shape + " over its " + entry.side + " side.";
   if (entry.type === "rotate") {
-    return who + " rotated the " + entry.shape + " " + entry.quarterTurns * 90 + "° clockwise around the " +
+    return who + " rotated the " + entry.shape + " " + (entry.quarterTurns === 3 ? "90° counterclockwise" : entry.quarterTurns * 90 + "° clockwise") + " around the " +
       cornerName(entry.from, entry.pivot) + ".";
   }
   if (entry.type === "challenge") {
@@ -314,7 +319,7 @@ export function updateControls(state, view, preview, legal, buttons, panels, tra
   buttons.rotateRight.disabled = !holding;
   buttons.flip.disabled = !holding;
   buttons.cancel.disabled = !(holding || (free && Boolean(view.selected)));
-  buttons.place.disabled = !(preview && preview.ok);
+  buttons.place.disabled = !(preview && (preview.ok || preview.plain));
   buttons.place.textContent = free ? "Move here" : "Place";
 
   // Movement

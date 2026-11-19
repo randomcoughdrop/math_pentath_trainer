@@ -240,3 +240,9 @@ When a challenge is correct and the challenger chooses "force a move", the **cha
 ## Hard: Free Piece Moves
 
 On Hard, a player who picks up a piece gets no marked destinations, corners, or flip choices. The piece's old position stays as a very faint ghost, and a stronger ghost follows the pointer. Rotate/flip (R, F, or the buttons) turn the ghost freely, and clicking drops it ("Move here" on touch after a second tap). The game then looks for the one slide, rotation, or flip that gives exactly that result; if none does, the drop is refused with a message and the piece stays picked up. Rule-breaking drops are accepted, as on any Hard move, and can be challenged. Chips still show their destinations. Easy and Medium are unchanged.
+
+## Hard Gives No Warnings, -90 Degrees, Flips Over Half Turns
+
+- On Hard the ghost is always drawn as a normal piece, and Place / "Move here" stays enabled. A drop that is impossible (off the board, over a chip or star, not one action) is still refused with a message, because nothing can happen.
+- The third turn button is "-90°" (a quarter turn counterclockwise). The move is the same one as before (three clockwise quarter turns), so saves and logs still work; the log says "90° counterclockwise".
+- When the computer's best moves tie and include both a flip and a 180° rotation, it plays the flip. A half turn that lands on exactly the squares of a flip is also swapped for the flip; none exists for the 12 shapes, so in practice the tie rule is what applies.

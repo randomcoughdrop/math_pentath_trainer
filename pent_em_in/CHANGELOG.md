@@ -1,6 +1,10 @@
 # Changelog
 
 ## After Phase 10
+- Hard: clicking another of your pieces or chips while carrying a piece switches to it.
+- Hard: the piece ghost never turns grey and the Place button stays available, so the game doesn't hint that a placement or move is wrong (impossible ones are still refused when you try).
+- The 270° turn is now -90° (a quarter turn the other way). Same move, clearer name.
+- The computer plays a flip instead of a half turn when they score the same (and when they land on identical squares).
 - A correct challenge that forces a move now lets the challenger move one of the offender's pieces (and the reverse after an incorrect challenge). The computer handles this too.
 - Hard: free piece moves with a faint ghost of the old position and a stronger ghost for the drop; no marked destinations.
 

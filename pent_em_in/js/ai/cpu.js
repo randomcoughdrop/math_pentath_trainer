@@ -5,7 +5,7 @@
 
 import { getPossiblePlacements, getPossibleMoves, getLegalPlacements } from "../moves.js";
 import { canChallenge, canChallengeWin } from "../challenges.js";
-import { challengesEnabled, isStar, occupiedSquares, squareKey } from "../rules.js";
+import { challengesEnabled, isStar, occupiedSquares, squareKey, cellsAfterMove } from "../rules.js";
 import { COLS, ROWS } from "../constants.js";
 import { searchMove, chooseByScore, searchPosition } from "./search.js";
 import { evaluate } from "./evaluate.js";
@@ -209,10 +209,25 @@ export function nextCpuMove(state, params, rng = Math.random, options = {}) {
     return shouldChallengeWin(state, params, rng) ? { type: "challenge-win" } : null;
   }
   if (state.pending) return respondToPending(state, params, rng);
-  if (state.forcedBy) return chooseForcedMove(state, params, rng);
+  if (state.forcedBy) return preferFlip(state, chooseForcedMove(state, params, rng));
 
   const category = shouldChallenge(state, params, rng);
   if (category) return { type: "challenge", category };
 
-  return chooseMove(state, params, rng, options);
+  return preferFlip(state, chooseMove(state, params, rng, options));
+}
+
+// A half turn that lands exactly where a flip would is played as the flip.
+export function preferFlip(state, move) {
+  if (!move || move.type !== "rotate" || move.quarterTurns !== 2) return move;
+  const options = getPossibleMoves(state).filter(({ move: other }) => other.pieceId === move.pieceId);
+  const rotated = options.find(({ move: other }) => sameMove(other, move));
+  if (!rotated) return move;
+  const piece = state.pieces.find((candidate) => candidate.id === move.pieceId);
+  const key = (cells) => cells.map(([row, col]) => row + "," + col).sort().join(";");
+  const target = key(cellsAfterMove(piece.cells, move));
+  const flip = options.find(({ move: other, analysis }) =>
+    other.type === "flip" && key(cellsAfterMove(piece.cells, other)) === target
+    && (analysis.legal || !rotated.analysis.legal));
+  return flip ? flip.move : move;
 }

@@ -14,7 +14,11 @@ export function chooseByScore(scored, params, rng) {
   if (sorted.length > 1 && rng() < params.nearBestRate) {
     return pickRandom(sorted.slice(1, 4), rng).item;
   }
-  const best = sorted.filter((entry) => entry.score === sorted[0].score);
+  let best = sorted.filter((entry) => entry.score === sorted[0].score);
+  // A half turn that scores exactly like a flip is the same idea; play the flip.
+  if (best.some((entry) => entry.item.type === "flip")) {
+    best = best.filter((entry) => !(entry.item.type === "rotate" && entry.item.quarterTurns === 2));
+  }
   return pickRandom(best, rng).item;
 }
 

@@ -49,7 +49,8 @@ import { relocationClick, usesFreeMoves, resolveFreeMove } from "../js/input.js"
     import { fastLegalMoves, mobility, afterMove } from "../js/ai/mobility.js";
     import { buildPosition, generateMoves, makeMove, unmakeMove, moveToObject, staticScore } from "../js/ai/engine.js";
     import { searchPosition } from "../js/ai/search.js";
-    import { chooseDeep, cpuStats } from "../js/ai/cpu.js";
+import { chooseDeep, cpuStats, preferFlip } from "../js/ai/cpu.js";
+import { cellsAfterMove } from "../js/rules.js";
     import { evaluate } from "../js/ai/evaluate.js";
     import { searchMove, chooseByScore } from "../js/ai/search.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
@@ -1238,6 +1239,30 @@ import { relocationClick, usesFreeMoves, resolveFreeMove } from "../js/input.js"
       assert(move && move.type === "slide" && move.direction === "right" && move.distance === 1);
       assert(resolveFreeMove(legal, piece, piece.cells) === null, "staying put is not a move");
       assert(resolveFreeMove(legal, piece, piece.cells.map(([r, c]) => [r + 5, c + 5])) === null);
+    });
+
+    test("the CPU plays a flip instead of an identical half turn; Hard ghosts never warn", () => {
+      const state = { ...mediumState(), settings: { ...mediumState().settings, level: 90 } };
+      // The I piece is symmetric: turning it 180 degrees about its center is a flip.
+      const base = createInitialState({ level: 90, startingPlayer: 1 });
+      base.phase = "movement";
+      base.pieces = [{ id: 0, owner: 1, shape: "I", cells: [[4, 3], [4, 4], [4, 5], [4, 6], [4, 7]] }];
+      const half = getPossibleMoves(base).map(({ move }) => move).find((m) => m.type === "rotate" && m.quarterTurns === 2
+        && cellsAfterMove(base.pieces[0].cells, m).map(([r, c]) => r + "," + c).sort().join() === base.pieces[0].cells.map(([r, c]) => r + "," + c).sort().join());
+      if (half) assert(preferFlip(base, half).type === "flip");
+      const other = getPossibleMoves(base).map(({ move }) => move).find((m) => m.type === "slide");
+      assert(preferFlip(base, other) === other);
+      const preview = computePreview(state, { shape: "I", cells: [[0, 0]] }, { row: 0, col: 0 });
+      assert(!preview || preview.plain === true);
+    });
+
+    test("equal-scoring half turns lose to flips", () => {
+      const flip = { type: "flip", pieceId: 0, side: "top" };
+      const half = { type: "rotate", pieceId: 0, pivot: [0, 0], quarterTurns: 2 };
+      for (let i = 0; i < 20; i++) {
+        assert(chooseByScore([{ item: half, score: 5 }, { item: flip, score: 5 }], { nearBestRate: 0 }, Math.random) === flip);
+      }
+      assert(chooseByScore([{ item: half, score: 6 }, { item: flip, score: 5 }], { nearBestRate: 0 }, Math.random) === half, "a better half turn is still played");
     });
 
     test("three incorrect challenges lose the game", () => {
