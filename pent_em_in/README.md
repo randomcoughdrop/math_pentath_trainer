@@ -37,6 +37,10 @@ The ghost shows your color where the piece can go. It turns grey with a slash th
 
 Keyboard only: after picking a piece, the arrow keys move the ghost and `Enter` places it.
 
+## Hard: Free Moves
+
+On Hard there are no hints for slides, turns, or flips. Click a piece: it fades to a faint ghost where it stood, and a stronger ghost follows your pointer. Turn it with `R`/`Shift+R`, flip it with `F`, then click to drop it. If the piece can't get there with one slide, turn, or flip, the drop is refused. Arrow keys and Enter work too.
+
 ## Extras
 
 - **Animations:** slides glide, rotations swing around the pivot, flips turn over their edge, chips roll. Skipped if your system asks for reduced motion.

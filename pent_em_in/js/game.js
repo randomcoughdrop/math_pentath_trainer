@@ -67,6 +67,7 @@ function applyPlacement(state, move) {
   next.moveLog.push({ type: "place", player, shape: move.shape, cells });
   next.lastTurn = { player, move: { type: "place", shape: move.shape, cells }, violations: analysis.violations };
   next.mustMovePiece = false;
+  next.forcedBy = null;
 
   startNextTurn(next, player);
   return { ok: true, state: next };
@@ -99,22 +100,28 @@ function applyMovement(state, move) {
     const from = piece.cells;
     piece.cells = cellsAfterMove(from, move);
 
-    // Count how many turns in a row this player has moved this piece.
-    const streak = next.repeat[player];
-    if (streak.pieceId === piece.id) {
-      streak.count += 1;
-    } else {
-      streak.pieceId = piece.id;
-      streak.count = 1;
+    // A move chosen by the opponent (after a challenge) is not the player's own
+    // turn, so it doesn't count toward their streak.
+    if (!state.forcedBy) {
+      const streak = next.repeat[player];
+      if (streak.pieceId === piece.id) {
+        streak.count += 1;
+      } else {
+        streak.pieceId = piece.id;
+        streak.count = 1;
+      }
+      next.lastWasChipMove[player] = false;
     }
-    next.lastWasChipMove[player] = false;
 
     const entry = { ...move, player, shape: piece.shape, from, to: piece.cells };
+    if (state.forcedBy) entry.forcedBy = state.forcedBy;
     next.moveLog.push(entry);
   }
 
-  next.lastTurn = { player, move: { ...move }, violations: analysis.violations };
+  // A forced move can't be challenged: the player who chose it isn't in a position to.
+  next.lastTurn = state.forcedBy ? null : { player, move: { ...move }, violations: analysis.violations };
   next.mustMovePiece = false;
+  next.forcedBy = null;
 
   startNextTurn(next, player);
   return { ok: true, state: next };

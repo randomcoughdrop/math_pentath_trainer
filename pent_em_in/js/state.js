@@ -28,6 +28,7 @@ export function createInitialState(options = {}) {
     strikes: { 1: 0, 2: 0 }, // incorrect challenges; three loses the game
     pending: null, // a challenge decision someone still has to make (see challenges.js)
     mustMovePiece: false, // the player to move was forced to move a pentomino, not a chip
+    forcedBy: null, // when set, that player (the challenge winner) chooses the move of the current player's piece
     winChallenged: false, // the loser has already challenged the declared win
     history: [],
     moveLog: [],

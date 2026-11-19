@@ -5,7 +5,7 @@ import { createInitialState } from "./state.js";
 import { applyMove, callTime, loseOnTime } from "./game.js";
 import { createClock, advanceClock, startTurn, setPaused } from "./clock.js";
 import { render, renderTray } from "./renderer.js";
-import { setupInput, computePreview, buildOverlay, clearSelection, playableMovesFor, placementOwner } from "./input.js";
+import { setupInput, computePreview, computeFreePreview, buildOverlay, clearSelection, playableMovesFor, placementOwner } from "./input.js";
 import { playerLabel, statusMessage, updateControls, renderLog, renderClocks, gameOverSummary } from "./ui.js";
 import { setupMenu, selectChoice } from "./menu.js";
 import { setupChallengeUI, renderChallengeUI } from "./challenge-ui.js";
@@ -98,7 +98,7 @@ const view = {};
 function resetView() {
   Object.assign(view, {
     held: null, hover: null, notice: "", announce: "",
-    selected: null, action: "slide", pivot: null, turnPreview: null,
+    selected: null, action: "slide", pivot: null, turnPreview: null, free: null,
     paused: false, challengeOpen: false, cpuHighlight: null, animation: null,
   });
 }
@@ -161,8 +161,8 @@ function showMenu() {
 function draw() {
   if (!state) return;
 
-  const preview = computePreview(state, view.held, view.hover);
   const legal = playableMovesFor(state);
+  const preview = computePreview(state, view.held, view.hover) ?? computeFreePreview(state, view, legal);
 
   // While paused the board is hidden, so nothing can be studied.
   gameView.hidden = view.paused;
@@ -353,7 +353,7 @@ function tick() {
   lastTick = now;
   if (!state || state.phase === "gameover") return;
 
-  const timeEvents = advanceClock(clock, elapsed, state.currentPlayer, !cpuToAct(state));
+  const timeEvents = advanceClock(clock, elapsed, state.forcedBy ?? state.currentPlayer, !cpuToAct(state));
 
   if (timeEvents.flagFall) {
     state = loseOnTime(state, timeEvents.flagFall);

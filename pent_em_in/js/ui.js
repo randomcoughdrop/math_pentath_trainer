@@ -2,7 +2,7 @@
 
 import { COLOR_SCHEMES, PIECES_PER_PLAYER } from "./constants.js";
 import { otherPlayer } from "./state.js";
-import { movesForPiece, rotateTurns, isPlacingNow, placementOwner } from "./input.js";
+import { movesForPiece, rotateTurns, isPlacingNow, placementOwner, usesFreeMoves } from "./input.js";
 import { formatTime } from "./clock.js";
 import { CHALLENGE_CATEGORIES } from "./challenges.js";
 import { challengesEnabled, blocksViolations } from "./rules.js";
@@ -126,16 +126,21 @@ export function decisionLabel(state, choice) {
   if (choice === "lose-turn") return "Make " + playerLabel(state, challenger) + " lose the turn";
   // "force-move": whoever has to move depends on how the challenge came out.
   const forced = state.pending.outcome === "correct" ? offender : challenger;
-  return "Make " + playerLabel(state, forced) + " move a pentomino";
+  return "Move one of " + playerLabel(state, forced) + "'s pentominoes";
 }
 
 function movementMessage(state, view, legal) {
-  const who = playerLabel(state, state.currentPlayer);
+  // After a challenge, the challenge winner chooses a move for the other player's piece.
+  const who = state.forcedBy
+    ? playerLabel(state, state.forcedBy) + " (moving " + playerLabel(state, state.currentPlayer) + "'s piece)"
+    : playerLabel(state, state.currentPlayer);
   const selected = view.selected;
   let message;
 
   if (!selected) {
-    message = who + ": click one of your pieces or chips to move it.";
+    message = state.forcedBy
+      ? who + ": click one of that player's pentominoes to move it."
+      : who + ": click one of your pieces or chips to move it.";
   } else if (selected.kind === "chip") {
     message = who + ": click a marked square to move the chip there.";
   } else {
@@ -143,7 +148,9 @@ function movementMessage(state, view, legal) {
     const name = "the " + piece.shape;
 
     if (movesForPiece(legal, piece.id).length === 0) {
-      message = who + ": " + name + " has no legal move right now. Pick another piece or a chip.";
+      message = who + ": " + name + " has no legal move right now. Pick another piece" + (state.forcedBy ? "." : " or a chip.");
+    } else if (view.free) {
+      message = who + ": move " + name + " where you want it. R turns it, F flips it, click to drop it, Esc to pick it up again.";
     } else if (view.action === "slide") {
       message = who + ": click a marked square to slide " + name + " there, or choose Rotate or Flip.";
     } else if (view.action === "rotate" && !view.pivot) {
@@ -180,6 +187,9 @@ export function describeEntry(state, entry) {
     return playerLabel(state, entry.placedBy) + " placed the " + entry.shape + " for " + who + ".";
   }
   if (entry.type === "place") return who + " placed the " + entry.shape + ".";
+  if (entry.forcedBy) {
+    return playerLabel(state, entry.forcedBy) + " moved " + who + "'s " + entry.shape + " (" + entry.type + ").";
+  }
   if (entry.type === "slide") return who + " slid the " + entry.shape + " " + entry.direction + " " + entry.distance + ".";
   if (entry.type === "flip") return who + " flipped the " + entry.shape + " over its " + entry.side + " side.";
   if (entry.type === "rotate") {
@@ -291,17 +301,21 @@ export function updateControls(state, view, preview, legal, buttons, panels, tra
   const placing = isPlacingNow(state);
   const moving = state.phase === "movement" && !state.pending;
 
-  panels.placement.hidden = !placing;
-  panels.movement.hidden = !moving;
+  // On Hard the movement phase uses the placement buttons: the piece is moved freely.
+  const free = moving && usesFreeMoves(state);
+
+  panels.placement.hidden = !(placing || free);
+  panels.movement.hidden = !moving || free;
   panels.trays.hidden = !placing;
 
-  // Placement
-  const holding = placing && Boolean(view.held);
+  // Placement (and free moves on Hard)
+  const holding = (placing && Boolean(view.held)) || (free && Boolean(view.free));
   buttons.rotateLeft.disabled = !holding;
   buttons.rotateRight.disabled = !holding;
   buttons.flip.disabled = !holding;
-  buttons.cancel.disabled = !holding;
+  buttons.cancel.disabled = !(holding || (free && Boolean(view.selected)));
   buttons.place.disabled = !(preview && preview.ok);
+  buttons.place.textContent = free ? "Move here" : "Place";
 
   // Movement
   const selected = moving ? view.selected : null;
@@ -347,7 +361,7 @@ export function renderClocks(parts, state, clock) {
     for (const player of [1, 2]) {
       const part = parts["player" + player];
       part.textContent = playerLabel(state, player) + ": " + formatTime(clock.remainingMs[player], { remaining: true });
-      part.classList.toggle("running", state.phase !== "gameover" && !clock.paused && state.currentPlayer === player);
+      part.classList.toggle("running", state.phase !== "gameover" && !clock.paused && (state.forcedBy ?? state.currentPlayer) === player);
     }
   } else {
     parts.game.textContent = "Game time: " + formatTime(Math.min(clock.elapsedMs, clock.limitMs)) +

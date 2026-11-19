@@ -17,7 +17,7 @@ import { copyState, otherPlayer } from "./state.js";
 import { restoreSnapshot } from "./history.js";
 import { PIECES_PER_PLAYER } from "./constants.js";
 import { challengesEnabled, isOnBoard, isStar, occupiedSquares, squareKey } from "./rules.js";
-import { hasLegalPlacement, getPossibleMoves } from "./moves.js";
+import { hasLegalPlacement, getPossibleMoves, getAllowedMoves } from "./moves.js";
 import { checkStuckPlayer } from "./turn.js";
 
 export const STRIKES_TO_LOSE = 3;
@@ -47,9 +47,11 @@ export function canChallenge(state) {
 }
 
 // The player who has to act next: whoever the pending decision is waiting on,
-// or else the player to move.
+// or else whoever chooses the move (the player to move, or, after a "force
+// a move" choice, the player who forced it).
 export function actingPlayer(state) {
-  return state.pending ? state.pending.chooser : state.currentPlayer;
+  if (state.pending) return state.pending.chooser;
+  return state.forcedBy ?? state.currentPlayer;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,18 +160,25 @@ export function decide(state, choice) {
     if (choice === "take-turn") {
       next.currentPlayer = pending.challenger;
     } else {
+      // The challenger moves one of the offender's pentominoes.
       next.currentPlayer = pending.offender;
       next.mustMovePiece = true;
+      next.forcedBy = pending.challenger;
     }
   } else if (choice === "lose-turn") {
     next.currentPlayer = pending.offender;
   } else {
+    // The challenged player moves one of the challenger's pentominoes.
     next.currentPlayer = pending.challenger;
     next.mustMovePiece = true;
+    next.forcedBy = pending.offender;
   }
 
-  // If no pentomino could possibly move, the player can't be made to move one.
-  if (next.mustMovePiece && getPossibleMoves(next).length === 0) next.mustMovePiece = false;
+  // If no pentomino could legally move, nobody can be made to move one.
+  if (next.mustMovePiece && getAllowedMoves(next).length === 0) {
+    next.mustMovePiece = false;
+    next.forcedBy = null;
+  }
 
   checkStuckPlayer(next);
   return { ok: true, state: next };

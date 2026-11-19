@@ -183,5 +183,6 @@ export function analyzeMove(state, move) {
 // moves can only if the current difficulty lets them through.
 export function isAllowed(state, analysis) {
   if (!analysis.possible) return false;
-  return analysis.violations.length === 0 || !blocksViolations(state);
+  // A move chosen for someone else (after a challenge) must be a legal one.
+  return analysis.violations.length === 0 || !(blocksViolations(state) || state.forcedBy);
 }

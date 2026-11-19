@@ -76,7 +76,7 @@ Preset levels (in `constants.js`): Easy = 15, Medium = 50, Hard = 80 (changed fr
 | Challenge | If correct (recorded "C") | If incorrect (recorded "I") |
 |-----------|---------------------------|------------------------------|
 | **Placement** | The opponent's piece is removed. The challenger chooses one of the opponent's remaining shapes and places it legally for them. The challenger then takes their own turn. | The challenged player may move one of the challenger's chips to a new location. The challenger then takes their own turn. |
-| **Other** | The board is restored to before the illegal move. The challenger chooses either to take a turn or to force the opponent to move a pentomino. | The challenged player chooses either to make the challenger lose the turn or to force the challenger to move a pentomino. |
+| **Other** | The board is restored to before the illegal move. The challenger chooses either to take a turn or to move one of the opponent's pentominoes themselves. | The challenged player chooses either to make the challenger lose the turn or to force the challenger to move a pentomino. |
 | **Three-in-a-row** | The challenger wins the game. | Same as "Other." |
 
 Three incorrect challenges is an automatic loss.
@@ -226,3 +226,17 @@ Three incorrect challenges is an automatic loss.
 - **Sound effects are on by default** (nothing plays until the first tap or key press, a browser rule). The turn-reminder beep keeps its own checkbox.
 - **Piece patterns are optional** and remembered; Player 2 is hatched.
 - **Animations are skipped** when the system asks for reduced motion.
+
+## Forced Moves After a Challenge
+
+When a challenge is correct and the challenger chooses "force a move", the **challenger picks and makes a move with one of the offender's pentominoes** (a legal slide, turn, or flip; no chips, no rule-breaking). The same applies the other way after an incorrect challenge: the challenged player moves one of the challenger's pentominoes. Details:
+
+- The forced move replaces the owner's turn, so afterwards it is the player who chose it who is on the move.
+- It does not count toward the owner's three-in-a-row streak, and it cannot be challenged.
+- It is written in the log under the owner's column, with hover text saying who moved it.
+- If the piece's owner has no legal pentomino move, nothing is forced.
+- The computer picks the forced move that leaves it best off by its own evaluation. (`state.forcedBy` records who chooses.)
+
+## Hard: Free Piece Moves
+
+On Hard, a player who picks up a piece gets no marked destinations, corners, or flip choices. The piece's old position stays as a very faint ghost, and a stronger ghost follows the pointer. Rotate/flip (R, F, or the buttons) turn the ghost freely, and clicking drops it ("Move here" on touch after a second tap). The game then looks for the one slide, rotation, or flip that gives exactly that result; if none does, the drop is refused with a message and the piece stays picked up. Rule-breaking drops are accepted, as on any Hard move, and can be challenged. Chips still show their destinations. Easy and Medium are unchanged.

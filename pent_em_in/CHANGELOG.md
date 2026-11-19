@@ -1,5 +1,9 @@
 # Changelog
 
+## After Phase 10
+- A correct challenge that forces a move now lets the challenger move one of the offender's pieces (and the reverse after an incorrect challenge). The computer handles this too.
+- Hard: free piece moves with a faint ghost of the old position and a stronger ghost for the drop; no marked destinations.
+
 ## Phase 10: Polish
 - Animations for slides, rotations, flips, and chips.
 - Keyboard placement (arrow keys and Enter), visible focus outlines.

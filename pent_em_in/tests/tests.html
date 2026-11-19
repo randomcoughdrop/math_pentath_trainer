@@ -38,7 +38,7 @@
     } from "../js/input.js";
     import { canChallenge, challengeWin, canChallengeWin } from "../js/challenges.js";
     import { getAllowedMoves } from "../js/moves.js";
-    import { relocationClick } from "../js/input.js";
+import { relocationClick, usesFreeMoves, resolveFreeMove } from "../js/input.js";
     import { cpuParams } from "../js/ai/params.js";
     import { chooseMove, shouldChallenge, shouldChallengeWin, nextCpuMove } from "../js/ai/cpu.js";
     import { makeRng } from "../js/ai/random.js";
@@ -1208,8 +1208,13 @@
       assert(take.currentPlayer === 2 && !take.mustMovePiece && take.pending === null);
       const force = doMove(c, { type: "decide", choice: "force-move" });
       assert(force.currentPlayer === 1 && force.mustMovePiece);
+      assert(force.forcedBy === 2, "the challenger chooses the move of the offender's piece");
+      assert(actorNow(force) === 2);
       assert(!applyMove(force, chipMove(0, 6, 5)).ok, "a chip move isn't allowed when a piece must move");
-      assert(applyMove(force, slide(0, "right", 1)).ok);
+      const forcedMove = applyMove(force, slide(0, "right", 1));
+      assert(forcedMove.ok);
+      assert(forcedMove.state.currentPlayer === 2 && forcedMove.state.forcedBy === null && forcedMove.state.lastTurn === null);
+      assert(forcedMove.state.moveLog.at(-1).forcedBy === 2);
     });
 
     test("an incorrect challenge is a strike and the move stands", () => {
@@ -1219,7 +1224,20 @@
       assert(JSON.stringify(c.pending.options) === JSON.stringify(["lose-turn", "force-move"]));
       assert(doMove(c, { type: "decide", choice: "lose-turn" }).currentPlayer === 1);
       const forced = doMove(c, { type: "decide", choice: "force-move" });
-      assert(forced.currentPlayer === 2 && forced.mustMovePiece);
+      assert(forced.currentPlayer === 2 && forced.mustMovePiece && forced.forcedBy === 1 && actorNow(forced) === 1);
+    });
+
+    test("Hard free moves: a dropped ghost is matched to a single action", () => {
+      const state = { ...mediumState(), settings: { ...mediumState().settings, level: 90 } };
+      assert(usesFreeMoves(state));
+      assert(!usesFreeMoves({ ...state, settings: { ...state.settings, level: 50 } }));
+      const legal = getAllowedMoves(state);
+      const piece = state.pieces[0];
+      const slid = piece.cells.map(([r, c]) => [r, c + 1]);
+      const move = resolveFreeMove(legal, piece, slid);
+      assert(move && move.type === "slide" && move.direction === "right" && move.distance === 1);
+      assert(resolveFreeMove(legal, piece, piece.cells) === null, "staying put is not a move");
+      assert(resolveFreeMove(legal, piece, piece.cells.map(([r, c]) => [r + 5, c + 5])) === null);
     });
 
     test("three incorrect challenges lose the game", () => {

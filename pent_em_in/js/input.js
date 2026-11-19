@@ -17,7 +17,7 @@
 // Everything that decides things is a plain function (easy to test). Only
 // setupInput touches the page.
 
-import { ROWS, COLS } from "./constants.js";
+import { ROWS, COLS, bandForLevel } from "./constants.js";
 import { SHAPE_NAMES, getShapeCells } from "./pieces.js";
 import { rotateAboutVertex, flipOverSide, normalize, slideCells } from "./transforms.js";
 import { analyzePlacement, isAllowed } from "./analyze.js";
@@ -31,8 +31,9 @@ import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "./rende
 // ---------------------------------------------------------------------------
 
 // Pick up a shape in its starting orientation.
-export function newHeldPiece(shape) {
-  return { shape, cells: normalize(getShapeCells(shape)) };
+// (Or, with `cells`, a piece in the orientation it already has.)
+export function newHeldPiece(shape, cells = null) {
+  return { shape, cells: normalize(cells ?? getShapeCells(shape)) };
 }
 
 // Turn the held piece a quarter turn. Rotating and flipping together can reach
@@ -98,6 +99,31 @@ export function playableMovesFor(state) {
     cache = { state, moves: moving ? getAllowedMoves(state) : [] };
   }
   return cache.moves;
+}
+
+// On Hard the player gets no help with slides, turns, and flips: no marked
+// destinations or corners. They pick a piece up, move and turn a see-through
+// copy wherever they like, and drop it. The game then works out which single
+// action (if any) that was.
+export function usesFreeMoves(state) {
+  return state.phase === "movement" && !state.pending && bandForLevel(state.settings.level) === "hard";
+}
+
+// Which move of this piece, if any, ends with it on exactly these squares?
+export function resolveFreeMove(legal, piece, targetCells) {
+  const wanted = targetCells.map(([row, col]) => squareKey(row, col)).sort().join(";");
+  return movesForPiece(legal, piece.id).find((move) =>
+    cellsAfterMove(piece.cells, move).map(([row, col]) => squareKey(row, col)).sort().join(";") === wanted) ?? null;
+}
+
+// The ghost for a piece being moved freely: { cells, ok, owner }, or null.
+// "ok" only means the piece can get there with one slide, turn, or flip.
+export function computeFreePreview(state, view, legal) {
+  if (!usesFreeMoves(state) || !view.free || !view.hover || !view.selected || view.selected.kind !== "piece") return null;
+  const piece = state.pieces.find((candidate) => candidate.id === view.selected.id);
+  if (!piece) return null;
+  const cells = cellsAt(view.free, view.hover.row, view.hover.col);
+  return { cells, ok: resolveFreeMove(legal, piece, cells) !== null, owner: piece.owner };
 }
 
 const sameSquare = (a, b) => a[0] === b[0] && a[1] === b[1];
@@ -186,6 +212,10 @@ export function buildOverlay(state, view, legal) {
 
   const piece = state.pieces.find((candidate) => candidate.id === selected.id);
   if (!piece) return overlay;
+  if (view.free && usesFreeMoves(state)) {
+    overlay.faintPieceId = piece.id; // where it was; the moving copy is the ghost
+    return overlay;
+  }
   overlay.selectedPieceId = piece.id;
 
   if (view.action === "slide") {
@@ -220,6 +250,7 @@ export function clearSelection(view) {
   view.action = "slide";
   view.pivot = null;
   view.turnPreview = null;
+  view.free = null;
 }
 
 // Switch what the selected piece will do: "slide", "rotate", or "flip".
@@ -240,6 +271,7 @@ export function movementClick(state, view, legal, cell, vertex) {
 
   if (selected && selected.kind === "piece") {
     const piece = state.pieces.find((candidate) => candidate.id === selected.id);
+    if (view.free) return null; // moving freely: clicks are handled by the drop logic
 
     if (view.action === "rotate" && vertex && rotateCorners(legal, piece.id).some((corner) => sameSquare(corner, vertex))) {
       view.pivot = vertex;
@@ -277,6 +309,8 @@ export function movementClick(state, view, legal, cell, vertex) {
       view.turnPreview = null;
     }
     view.selected = { kind: "piece", id: piece.id, anchor: [cell.row, cell.col] };
+    view.free = usesFreeMoves(state) && movesForPiece(legal, piece.id).length > 0 ? newHeldPiece(piece.shape, piece.cells) : null;
+    if (view.free) view.hover = null;
     if (movesForPiece(legal, piece.id).length === 0) view.notice = "That piece has no legal move right now.";
     return null;
   }
@@ -340,6 +374,27 @@ export function relocationClick(state, view, cell) {
 export function setupInput({ board, trays, buttons, view, getState, onMove, onChange }) {
   const placing = () => Boolean(getState()) && isPlacingNow(getState()) && !cpuToAct(getState());
 
+  // Hard: a piece is being moved freely (see usesFreeMoves).
+  const freeMoving = () => {
+    const state = getState();
+    return Boolean(state) && !cpuToAct(state) && usesFreeMoves(state)
+      && Boolean(view.selected) && view.selected.kind === "piece" && Boolean(view.free);
+  };
+
+  // Drop the free piece where the ghost is, if that is one slide, turn, or flip.
+  function commitFree() {
+    if (!view.hover) return;
+    const state = getState();
+    const piece = state.pieces.find((candidate) => candidate.id === view.selected.id);
+    const move = resolveFreeMove(playableMovesFor(state), piece, cellsAt(view.free, view.hover.row, view.hover.col));
+    if (move) {
+      play(move);
+    } else {
+      view.notice = "The piece can't get there with one slide, one turn about a corner, or one flip.";
+      onChange();
+    }
+  }
+
   function play(move) {
     const result = onMove(move);
     view.notice = result.ok ? "" : result.message;
@@ -349,15 +404,17 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   // --- placement actions ---
 
   function rotate(clockwise) {
-    if (!placing() || !view.held) return;
-    view.held = rotateHeld(view.held, clockwise);
+    if (freeMoving()) view.free = rotateHeld(view.free, clockwise);
+    else if (placing() && view.held) view.held = rotateHeld(view.held, clockwise);
+    else return;
     view.notice = "";
     onChange();
   }
 
   function flip() {
-    if (!placing() || !view.held) return;
-    view.held = flipHeld(view.held);
+    if (freeMoving()) view.free = flipHeld(view.free);
+    else if (placing() && view.held) view.held = flipHeld(view.held);
+    else return;
     view.notice = "";
     onChange();
   }
@@ -375,6 +432,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   }
 
   function tryPlace() {
+    if (freeMoving()) return commitFree();
     if (!placing() || !view.held || !view.hover) return;
     play({
       type: "place",
@@ -420,6 +478,21 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
       return;
     }
     if (state.pending && state.pending.kind === "choose") return;
+
+    if (freeMoving()) {
+      const square = squareUnderPointer(event);
+      if (!square) return;
+      const same = view.hover && view.hover.row === square.row && view.hover.col === square.col;
+      if (event.pointerType === "mouse" || same) {
+        view.hover = square;
+        commitFree();
+      } else {
+        view.hover = square; // touch: the first tap moves the ghost, the second drops it
+        view.notice = "";
+        onChange();
+      }
+      return;
+    }
 
     if (state.phase === "movement") {
       const { x, y, width } = pointOnBoard(event);
@@ -523,7 +596,7 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
   // Placing a piece without a mouse: the arrow keys move the ghost, Enter places it.
   function keyboardPlacement(event, key) {
     const state = getState();
-    if (!state || cpuToAct(state) || !isPlacingNow(state) || !view.held) return;
+    if (!state || cpuToAct(state) || !((isPlacingNow(state) && view.held) || freeMoving())) return;
     if (document.activeElement && document.activeElement.tagName === "BUTTON") return; // let Enter press the button
     event.preventDefault();
     if (key === "enter") {

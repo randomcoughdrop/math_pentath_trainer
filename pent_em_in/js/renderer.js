@@ -34,6 +34,7 @@ const BLOCKED_LOOK = { fill: "#6b665a", edge: "#2d2a24" };
 //   corners          [[row, col], ...] grid corners to mark as places to pivot
 //   pivot            [row, col] the corner that has been chosen
 //   ghosts           [{ cells }] see-through pieces showing where a move would land
+//   faintPieceId     a piece being moved freely: drawn very faintly where it still stands
 //   animation        { ...animation (see animation.js), progress } a piece or chip caught mid-move
 export function render(canvas, state, extras = {}) {
   const layout = fitCanvas(canvas, COLS + 2 * BOARD_MARGIN, ROWS + 2 * BOARD_MARGIN);
@@ -175,7 +176,7 @@ export function drawBoard(ctx, state, layout, extras = {}) {
   drawGridLines(ctx, layout, COLS, ROWS, 1);
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
-  drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds, extras.animation);
+  drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds, extras.animation, extras.faintPieceId);
   drawMovingPiece(ctx, layout, colors, state, extras.animation);
   drawSelection(ctx, state, layout, extras);
   drawHighlight(ctx, layout, extras);
@@ -245,9 +246,15 @@ function drawStartMarkers(ctx, { cell }, colors) {
 }
 
 // Pieces placed on the board. Their cells are in board coordinates.
-function drawPieces(ctx, state, { cell }, colors, dimmed = [], animation = null) {
+function drawPieces(ctx, state, { cell }, colors, dimmed = [], animation = null, faintPieceId = null) {
   for (const piece of state.pieces) {
     if (animation && animation.pieceId === piece.id) continue; // drawn by drawMovingPiece
+    if (piece.id === faintPieceId) {
+      ctx.globalAlpha = 0.2; // where the piece was, while it is carried
+      drawCells(ctx, piece.cells, 0, 0, cell, colors[piece.owner]);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     drawCells(ctx, piece.cells, 0, 0, cell, colors[piece.owner]);
     // Easy only: a piece with no legal move is slightly washed out.
     if (dimmed.includes(piece.id)) {

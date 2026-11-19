@@ -133,14 +133,27 @@ export function shouldChallengeWin(state, params, rng = Math.random) {
 
 // Who moves next for each choice, and whether they must move a pentomino
 // (this mirrors decide() in challenges.js).
+// "forced" means the chooser picks a move for the other player's piece.
 function whoMoves(pending, choice) {
   const correct = pending.outcome === "correct";
   if (correct) return choice === "take-turn"
-    ? { mover: pending.challenger, piecesOnly: false }
-    : { mover: pending.offender, piecesOnly: true };
+    ? { mover: pending.challenger, piecesOnly: false, forced: false }
+    : { mover: pending.offender, piecesOnly: true, forced: true };
   return choice === "lose-turn"
-    ? { mover: pending.offender, piecesOnly: false }
-    : { mover: pending.challenger, piecesOnly: true };
+    ? { mover: pending.offender, piecesOnly: false, forced: false }
+    : { mover: pending.challenger, piecesOnly: true, forced: true };
+}
+
+// After a "force a move" choice the CPU picks the move for the other player's
+// piece: the one that leaves the CPU best off.
+function chooseForcedMove(state, params, rng) {
+  const me = state.forcedBy;
+  const position = { ...state, mustMovePiece: true };
+  const moves = fastLegalMoves(position, state.currentPlayer, true);
+  if (moves.length === 0) return null;
+  if (rng() < params.randomMoveRate) return pickRandom(moves, rng);
+  const scored = moves.map((move) => ({ item: move, score: evaluate(afterMove(position, move), me) }));
+  return chooseByScore(scored, { ...params, nearBestRate: 0 }, rng);
 }
 
 // Look one move ahead on each choice: if I move, assume my best move; if the
@@ -148,12 +161,12 @@ function whoMoves(pending, choice) {
 function chooseDecision(state, params, rng) {
   const me = state.pending.chooser;
   const scored = state.pending.options.map((choice) => {
-    const { mover, piecesOnly } = whoMoves(state.pending, choice);
+    const { mover, piecesOnly, forced } = whoMoves(state.pending, choice);
     const position = { ...state, currentPlayer: mover, mustMovePiece: piecesOnly };
     const moves = fastLegalMoves(position, mover, piecesOnly);
     if (moves.length === 0) return { item: choice, score: evaluate(position, me) };
     const results = moves.map((move) => evaluate(afterMove(position, move), me));
-    return { item: choice, score: mover === me ? Math.max(...results) : Math.min(...results) };
+    return { item: choice, score: mover === me || forced ? Math.max(...results) : Math.min(...results) };
   });
   // The decision is a rare, important choice, so it uses the stronger setting:
   // random only if the level is very low.
@@ -196,6 +209,7 @@ export function nextCpuMove(state, params, rng = Math.random, options = {}) {
     return shouldChallengeWin(state, params, rng) ? { type: "challenge-win" } : null;
   }
   if (state.pending) return respondToPending(state, params, rng);
+  if (state.forcedBy) return chooseForcedMove(state, params, rng);
 
   const category = shouldChallenge(state, params, rng);
   if (category) return { type: "challenge", category };
