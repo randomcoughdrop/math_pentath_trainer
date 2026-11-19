@@ -431,7 +431,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 
 ---
 
-### Phase 9: CPU Deep Search
+### Phase 9: CPU Deep Search ✅ Done
 **Goal:** A strong CPU at the top of the dial.
 
 - `ai/search.js`: minimax with alpha-beta pruning for `searchDepth` 2 to 4, using the Phase 8 evaluation at the leaves.

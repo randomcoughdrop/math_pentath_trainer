@@ -7,7 +7,7 @@ import { getPossiblePlacements, getPossibleMoves, getLegalPlacements } from "../
 import { canChallenge, canChallengeWin } from "../challenges.js";
 import { challengesEnabled, isStar, occupiedSquares, squareKey } from "../rules.js";
 import { COLS, ROWS } from "../constants.js";
-import { searchMove, chooseByScore } from "./search.js";
+import { searchMove, chooseByScore, searchPosition } from "./search.js";
 import { evaluate } from "./evaluate.js";
 import { afterMove, fastLegalMoves } from "./mobility.js";
 import { pickRandom } from "./random.js";
@@ -15,11 +15,16 @@ import { otherPlayer } from "../state.js";
 
 // --- choosing a move on its own turn ---
 
-export function chooseMove(state, params, rng = Math.random) {
+// options.budgetMs is how long the deep search may think (see search.js).
+export function chooseMove(state, params, rng = Math.random, options = {}) {
   return state.phase === "placement"
     ? choosePlacement(state, params, rng)
-    : chooseMovement(state, params, rng);
+    : chooseMovement(state, params, rng, options);
 }
+
+// For checking: how often the deep search came up with a move the game's own
+// rules didn't accept (it never should).
+export const cpuStats = { deepFallbacks: 0 };
 
 const PLACEMENT_SAMPLE = 60; // how many legal placements to score each turn
 
@@ -71,7 +76,22 @@ function scorePlacements(state, placements) {
   });
 }
 
-function chooseMovement(state, params, rng) {
+// Look several moves ahead (see searchPosition). Returns a move, or null.
+export function chooseDeep(state, params, rng, options = {}) {
+  const result = searchPosition(state, {
+    maxDepth: params.maxDepth,
+    minDepth: params.searchDepth,
+    budgetMs: options.budgetMs ?? params.thinkingMs,
+    topK: params.nearBestRate > 0 ? 4 : 1, // near-best moves need real scores too
+    piecesOnly: state.mustMovePiece,
+  });
+  if (!result) return null;
+  return chooseByScore(result.scored.map(({ move, score }) => ({ item: move, score })), params, rng);
+}
+
+const sameMove = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function chooseMovement(state, params, rng, options) {
   const possible = getPossibleMoves(state);
   const legal = possible.filter(({ analysis }) => analysis.legal).map(({ move }) => move);
   const broken = possible.filter(({ analysis }) => !analysis.legal).map(({ move }) => move);
@@ -79,6 +99,11 @@ function chooseMovement(state, params, rng) {
   if (wantsToBreakRules(state, params, rng, broken)) return pickRandom(broken, rng);
   if (legal.length === 0) return broken.length > 0 && challengesEnabled(state) ? pickRandom(broken, rng) : null;
   if (rng() < params.randomMoveRate) return pickRandom(legal, rng);
+  if (params.maxDepth >= 2) {
+    const deep = chooseDeep(state, params, rng, options);
+    if (deep && legal.some((move) => sameMove(move, deep))) return deep;
+    cpuStats.deepFallbacks++; // never expected; the one-move search below covers it
+  }
   return searchMove(state, legal, params, rng);
 }
 
@@ -166,7 +191,7 @@ function respondToPending(state, params, rng) {
 
 // Whatever the CPU should do right now (the caller has checked it is the CPU's
 // turn to act, see players.js). Returns a move for applyMove, or null.
-export function nextCpuMove(state, params, rng = Math.random) {
+export function nextCpuMove(state, params, rng = Math.random, options = {}) {
   if (state.phase === "gameover") {
     return shouldChallengeWin(state, params, rng) ? { type: "challenge-win" } : null;
   }
@@ -175,5 +200,5 @@ export function nextCpuMove(state, params, rng = Math.random) {
   const category = shouldChallenge(state, params, rng);
   if (category) return { type: "challenge", category };
 
-  return chooseMove(state, params, rng);
+  return chooseMove(state, params, rng, options);
 }

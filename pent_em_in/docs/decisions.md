@@ -192,3 +192,28 @@ Three incorrect challenges is an automatic loss.
 | Entries | Just the piece letter (O for a chip). A piece placed for a player after a challenge is in that player's column. |
 | Other events | Challenges, challenged wins, and decisions show a short italic word (for example "challenge ✓"), since they have no letter. |
 | Detail | The full sentence (direction, distance, rows and columns) is the hover text on each entry. |
+
+## Phase 9 Implementation Decisions
+
+| Topic | Decision |
+|---|---|
+| Separate engine | The search runs on `ai/engine.js`, a second implementation of the movement rules, because the game's own move code is far too slow to search with. Tests keep the two identical. |
+| Search style | Minimax from the choosing player's point of view, alpha-beta, iterative deepening, lazy best-first move ordering. No transposition table or other extras yet. |
+| Repetition | Not a special case: the opponent's generated moves already leave out a third repeat, so a trapped opponent is simply a win. |
+| Near-best moves | The top level keeps exact scores for the best four moves when `nearBestRate` is above 0. |
+| Depth table | First kept as planned (2, 3, and 4), then made dynamic (see "Dynamic Search Depth" below). |
+| Time budget | Per level (see "Dynamic Search Depth"); on the chess clock never more than 1/40 of the time left, minimum 0.1 s. Depth 1 always finishes, and an unfinished deeper round is discarded. |
+| Worker | One module worker (`ai/worker.js`). The saved history is left out of the message because it is large and unused. Falls back to the main thread if the worker can't start or fails. |
+| Pausing | A move that arrives while paused is dropped, and the computer thinks again after Resume. |
+| Computer's turn alert | The turn reminder no longer counts the computer's turns. |
+
+## Dynamic Search Depth
+
+| Topic | Decision |
+|---|---|
+| Depth | Each level has a minimum depth, a maximum depth, and a thinking time (`params.js`). The search deepens while the next depth is expected to fit in the time, so depth varies with the position and the device. |
+| Medium | At least 3 moves ahead, at most 4, 1 second. |
+| Hard (80) | At least 5 moves ahead, usually 6, at most 11, 3.8 seconds. Most moves take under 4 seconds here. |
+| Level 100 | At least 6, usually 7, at most 14, 5 seconds. |
+| Safety | The minimum depth may use up to 3 times the budget; after that the last finished depth is used. |
+| Simulations | `playCpuGame` and `tools/compare.mjs` default to a 200 ms budget so games finish quickly; this makes the simulated computers weaker than in the page. |

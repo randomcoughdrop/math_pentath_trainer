@@ -9,7 +9,7 @@ import { nextCpuMove } from "./cpu.js";
 import { makeRng } from "./random.js";
 import { evaluate } from "./evaluate.js";
 
-// options: { level (the rules band), cpuLevels: {1, 2} (each side's strength), params: {1, 2} (exact cpuParams),
+// options: { level (the rules band), cpuLevels: {1, 2} (each side's strength), params: {1, 2} (exact cpuParams), budgetMs (thinking time per move, default 200),
 //            seed, maxSteps, startingPlayer }
 // Returns { state, steps, finished, problems, leader }: problems lists any move the
 // game refused (there should be none); leader is who looks ahead if the game was cut off.
@@ -30,7 +30,7 @@ export function playCpuGame(options = {}) {
   while (steps < maxSteps) {
     const actor = actorNow(state);
     if (actor === null) break;
-    const move = nextCpuMove(state, params[actor], rng);
+    const move = nextCpuMove(state, params[actor], rng, { budgetMs: options.budgetMs ?? 200 });
     if (move === null) break;
     const result = applyMove(state, move);
     steps++;

@@ -78,6 +78,8 @@ let clock = null; // the clocks (not part of the game state)
 let settings = null; // what the menu chose, kept for "Play again"
 let cpu = null; // the computer's settings (from the level), see ai/params.js
 let cpuTimer = null;
+let cpuThinking = false; // the computer is working out a move
+let cpuToken = 0; // changes when a game starts or ends, so old answers are ignored
 
 // Things that are not part of the game itself: the piece being held, where the
 // cursor is, short messages, and whether the game is paused.
@@ -114,6 +116,8 @@ function startGame(chosen) {
   cpu = cpuParams(chosen.level);
   clearTimeout(cpuTimer);
   cpuTimer = null;
+  cpuThinking = false;
+  cpuToken++;
   resetView();
   view.announce = "Random draw: " + playerLabel(state, startingPlayer) + " goes first.";
 
@@ -132,6 +136,8 @@ function showMenu() {
   state = null;
   clearTimeout(cpuTimer);
   cpuTimer = null;
+  cpuThinking = false;
+  cpuToken++;
   gameScreen.hidden = true;
   menu.hidden = false;
 }
@@ -209,25 +215,88 @@ function squaresOf(move, after) {
   return piece ? piece.cells : null;
 }
 
-// If it is the computer's turn to act, wait a moment and then act. Called after
-// every redraw; the timer makes sure only one move is waiting at a time.
+// The computer thinks in a Web Worker, so a long search never freezes the page.
+// If workers aren't available (or the worker fails), it thinks right here instead.
+let worker = null;
+let workerFailed = false;
+let nextJobId = 0;
+const jobs = new Map(); // id -> { resolve, state, options } for answers still to come
+
+function startWorker() {
+  if (worker || workerFailed) return;
+  try {
+    worker = new Worker(new URL("./ai/worker.js", import.meta.url), { type: "module" });
+  } catch (error) {
+    workerFailed = true;
+    return;
+  }
+  worker.onmessage = ({ data }) => {
+    const job = jobs.get(data.id);
+    if (!job) return;
+    jobs.delete(data.id);
+    job.resolve(data.error ? nextCpuMove(job.state, cpu, Math.random, job.options) : data.move);
+  };
+  worker.onerror = () => {
+    workerFailed = true;
+    worker = null;
+    for (const [id, job] of jobs) job.resolve(nextCpuMove(job.state, cpu, Math.random, job.options));
+    jobs.clear();
+  };
+}
+
+// Ask for the computer's move. Returns a promise for the move (or null).
+function think(gameState, options) {
+  startWorker();
+  if (!worker) return Promise.resolve().then(() => nextCpuMove(gameState, cpu, Math.random, options));
+  return new Promise((resolve) => {
+    const id = ++nextJobId;
+    jobs.set(id, { resolve, state: gameState, options });
+    // The saved history isn't needed to choose a move, and is slow to copy.
+    worker.postMessage({ id, state: { ...gameState, history: [] }, params: cpu, options });
+  });
+}
+
+// How long the computer may think: what its level allows (see ai/params.js). On
+// the chess clock it never uses more than a fortieth of the time it has left,
+// so it can't lose on time by thinking.
+function thinkingBudget() {
+  if (clock.type !== "chess") return cpu.thinkingMs;
+  const left = clock.remainingMs[actorNow(state)];
+  return Math.min(cpu.thinkingMs, Math.max(100, left / 40));
+}
+
+// If it is the computer's turn to act, think and then act. Called after every
+// redraw; `cpuThinking` makes sure only one move is being worked on at a time.
 function scheduleCpu() {
-  if (!state || view.paused || cpuTimer !== null || !cpuToAct(state)) return;
+  if (!state || view.paused || cpuThinking || !cpuToAct(state)) return;
   const waitingOn = state;
-  cpuTimer = setTimeout(() => {
-    cpuTimer = null;
-    if (state !== waitingOn || view.paused) return draw();
-    const move = nextCpuMove(state, cpu);
-    if (move === null) {
-      // Nothing to do (for example, it chooses not to challenge a win). Stop asking.
-      if (state.phase === "gameover") state = { ...state, lastTurn: null };
-      return draw();
-    }
-    const result = playMove(move);
-    view.cpuHighlight = result.ok ? squaresOf(move, state) : null;
-    if (!result.ok) console.error("The computer's move was refused:", move, result.message);
-    draw();
-  }, CPU_DELAY_MS);
+  const token = cpuToken;
+  const started = performance.now();
+  cpuThinking = true;
+
+  think(waitingOn, { budgetMs: thinkingBudget() }).then((move) => {
+    // Even a quick answer waits a moment, so its moves can be followed.
+    const wait = Math.max(0, CPU_DELAY_MS - (performance.now() - started));
+    cpuTimer = setTimeout(() => {
+      cpuTimer = null;
+      if (token !== cpuToken) return; // a new game started, or the menu came back
+      cpuThinking = false;
+      applyCpuMove(waitingOn, move);
+    }, wait);
+  });
+}
+
+function applyCpuMove(waitingOn, move) {
+  if (state !== waitingOn || view.paused) return draw();
+  if (move === null) {
+    // Nothing to do (for example, it chooses not to challenge a win). Stop asking.
+    if (state.phase === "gameover") state = { ...state, lastTurn: null };
+    return draw();
+  }
+  const result = playMove(move);
+  view.cpuHighlight = result.ok ? squaresOf(move, state) : null;
+  if (!result.ok) console.error("The computer's move was refused:", move, result.message);
+  draw();
 }
 
 setupInput({ board, trays, buttons, view, getState: () => state, onMove: handleMove, onChange: draw });
@@ -250,7 +319,7 @@ function tick() {
   lastTick = now;
   if (!state || state.phase === "gameover") return;
 
-  const events = advanceClock(clock, elapsed, state.currentPlayer);
+  const events = advanceClock(clock, elapsed, state.currentPlayer, !cpuToAct(state));
 
   if (events.flagFall) {
     state = loseOnTime(state, events.flagFall);

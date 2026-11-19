@@ -31,6 +31,7 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/input.js` | Mouse, touch, and keyboard to game actions |
 | `js/ui.js` | Status text, game-over text, clocks display, buttons, move log |
 | `js/menu.js` | The start screen |
+| `js/ai/engine.js`, `js/ai/worker.js` | Fast engine for the search; the Web Worker that runs the CPU |
 | `js/players.js` | Who is human or CPU, and who the game is waiting on |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
@@ -186,6 +187,10 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 **Pausing** is page-only: `view.paused` stops the clock (`setPaused`) and hides the board and controls, so the position can't be studied while the clocks are stopped.
 
 **The start screen** (`menu.js`) turns radio-button choices into settings (`settingsFromChoices`), and `main.js` `startGame` builds the state and clock from them. "Play again" starts a new game with the same settings; "Back to menu" returns to the start screen.
+
+## Phase 9: Deep Search and the Worker
+
+`ai/engine.js` is a fast copy of the movement rules for the search to run on, `ai/search.js` has the minimax search, and `ai/worker.js` runs the computer's thinking in a Web Worker. `main.js` sends the worker the game state (without its saved history) and plays whatever move comes back after at least half a second; if workers aren't available it thinks on the main thread. See [ai.md](ai.md).
 
 ## Phase 8: Evaluation and Search
 

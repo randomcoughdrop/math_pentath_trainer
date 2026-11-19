@@ -4,7 +4,7 @@ A browser version of Pent 'Em In, a two-player transformational geometry game pl
 
 Play it with a friend on the same screen, or against the computer.
 
-> **Status:** Phase 7 (a complete game for two players on one screen or against the computer: start screen, placement, movement, clocks, rule-breaking moves and challenges on Medium and Hard, and a game-over screen). The computer looks one move ahead; a deeper search comes in Phase 9. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
+> **Status:** Phase 7 (a complete game for two players on one screen or against the computer: start screen, placement, movement, clocks, rule-breaking moves and challenges on Medium and Hard, and a game-over screen). The computer looks ahead several moves, thinking in the background so the page never freezes. See [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the roadmap.
 
 ## Running It Locally
 

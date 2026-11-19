@@ -45,6 +45,9 @@
     import { getPossiblePlacements } from "../js/moves.js";
     import { playerLabel } from "../js/ui.js";
     import { fastLegalMoves, mobility, afterMove } from "../js/ai/mobility.js";
+    import { buildPosition, generateMoves, makeMove, unmakeMove, moveToObject, staticScore } from "../js/ai/engine.js";
+    import { searchPosition } from "../js/ai/search.js";
+    import { chooseDeep, cpuStats } from "../js/ai/cpu.js";
     import { evaluate } from "../js/ai/evaluate.js";
     import { searchMove, chooseByScore } from "../js/ai/search.js";
     import { boardCellFromPoint, trayIndexFromPoint, vertexFromPoint } from "../js/renderer.js";
@@ -1335,10 +1338,22 @@
       const at = (level) => cpuParams(level);
       assert(at(0).randomMoveRate === 1 && at(0).searchDepth === 0);
       assert(Math.abs(at(25).randomMoveRate - 0.6) < 1e-9 && at(25).searchDepth === 1);
-      assert(Math.abs(at(50).randomMoveRate - 0.3) < 1e-9 && at(50).searchDepth === 2);
-      assert(at(100).randomMoveRate === 0 && at(100).searchDepth === 4);
+      assert(Math.abs(at(50).randomMoveRate - 0.3) < 1e-9 && at(50).searchDepth === 3);
+      assert(at(100).randomMoveRate === 0 && at(100).searchDepth === 6);
       assert(Math.abs(at(12.5).randomMoveRate - 0.8) < 1e-9, "straight line between rows");
       assert(at(-5).level === 0 && at(500).level === 100, "clamped");
+    });
+
+    test("cpuParams sets how long and how deep the computer may think", () => {
+      const medium = cpuParams(PRESET_LEVELS.medium), hard = cpuParams(PRESET_LEVELS.hard);
+      assert(medium.searchDepth === 3 && medium.maxDepth === 4 && medium.thinkingMs === 1000);
+      assert(hard.searchDepth === 5 && hard.maxDepth === 11 && hard.thinkingMs === 3800);
+      assert(cpuParams(100).searchDepth === 6 && cpuParams(100).maxDepth === 14 && cpuParams(100).thinkingMs === 5000);
+      assert(cpuParams(PRESET_LEVELS.easy).maxDepth === 1, "Easy only looks one move ahead");
+      for (let level = 0; level <= 100; level += 5) {
+        const p = cpuParams(level);
+        assert(p.maxDepth >= p.searchDepth, "max depth is never below the minimum, level " + level);
+      }
     });
 
     test("cpuParams band behavior: challenges and rule-breaking", () => {
@@ -1426,7 +1441,7 @@
     test("CPU vs CPU games run without a refused move at every preset", () => {
       for (const level of [PRESET_LEVELS.easy, PRESET_LEVELS.medium, PRESET_LEVELS.hard]) {
         for (const seed of [1]) {
-          const result = playCpuGame({ level, seed, maxSteps: 60 });
+          const result = playCpuGame({ level, seed, maxSteps: 60, budgetMs: 20 });
           assert(result.problems.length === 0, "level " + level + " seed " + seed + ": " + JSON.stringify(result.problems));
           assert(result.steps > 10);
         }
@@ -1458,7 +1473,7 @@
       let checked = 0;
       for (const seed of [1, 2]) {
         for (const steps of [14, 40, 90]) {
-          const { state } = playCpuGame({ level: 50, seed, maxSteps: steps });
+          const { state } = playCpuGame({ level: 50, seed, maxSteps: steps, budgetMs: 10 });
           if (state.phase !== "movement") continue;
           for (const player of [1, 2]) {
             const position = { ...state, currentPlayer: player, pending: null };
@@ -1559,6 +1574,169 @@
       assert(logCell(entry).kind === "event" && logCell(entry).text.includes("✓"));
       const wrong = doMove(afterBadSlide(), { type: "challenge", category: "star-landing" });
       assert(logCell(wrong.moveLog[wrong.moveLog.length - 1]).text.includes("✗"));
+    });
+
+    // ---------------- Phase 9: deep search ----------------
+
+    // A handful of real movement positions from random games.
+    let cachedPositions = null; // building them takes a moment, so only do it once
+    function samplePositions() {
+      if (cachedPositions) return cachedPositions;
+      const quick = { randomMoveRate: 1, nearBestRate: 0, searchDepth: 0, challengeRate: 0, illegalMoveRate: 0 };
+      const found = [];
+      for (const [seed, steps] of [[1, 20], [2, 40], [3, 80]]) {
+        const { state } = playCpuGame({ level: 15, seed, maxSteps: steps, params: { 1: quick, 2: quick } });
+        if (state.phase === "movement") found.push(state);
+      }
+      cachedPositions = found;
+      return found;
+    }
+
+    test("the engine lists exactly the moves the game does, and scores like evaluate()", () => {
+      const positions = samplePositions();
+      assert(positions.length >= 2);
+      for (const state of positions) {
+        for (const player of [1, 2]) {
+          const position = { ...state, currentPlayer: player, pending: null };
+          const pos = buildPosition(position);
+          const out = new Int32Array(2048);
+          const count = generateMoves(pos, player, out);
+          const key = (move) => JSON.stringify(move);
+          const fast = [...out.subarray(0, count)].map((move) => key(moveToObject(pos, move))).sort();
+          const slow = getLegalMoves(position).map(key).sort();
+          assert(fast.join("|") === slow.join("|"), "same moves, player " + player);
+          assert(Math.abs(staticScore(pos, player, player === 1 ? 2 : 1) - evaluate(position, player)) < 1e-9, "same score");
+        }
+      }
+    });
+
+    test("making and unmaking a move restores the position exactly", () => {
+      for (const state of samplePositions()) {
+        const player = state.currentPlayer;
+        const pos = buildPosition(state);
+        const before = JSON.stringify([...pos.occupied]) + [...pos.row0] + [...pos.col0] + [...pos.orient] +
+          [...pos.chipRow] + [...pos.chipCol] + pos.repeatPiece + pos.repeatCount + pos.lastWasChip;
+        const out = new Int32Array(2048);
+        const count = generateMoves(pos, player, out);
+        const undo = new Int32Array(8);
+        for (let i = 0; i < count; i++) {
+          makeMove(pos, out[i], player, undo);
+          unmakeMove(pos, out[i], player, undo);
+        }
+        const after = JSON.stringify([...pos.occupied]) + [...pos.row0] + [...pos.col0] + [...pos.orient] +
+          [...pos.chipRow] + [...pos.chipCol] + pos.repeatPiece + pos.repeatCount + pos.lastWasChip;
+        assert(before === after);
+      }
+    });
+
+    test("a move made in the engine leads to the same position as the game's", () => {
+      for (const state of samplePositions()) {
+        const player = state.currentPlayer;
+        const pos = buildPosition(state);
+        const out = new Int32Array(2048);
+        const count = generateMoves(pos, player, out);
+        const undo = new Int32Array(8);
+        for (let i = 0; i < count; i += 7) { // every seventh move, to keep it quick
+          const move = moveToObject(pos, out[i]);
+          const real = applyMove({ ...state, level: 15 }, move);
+          if (!real.ok) continue; // a rule-breaking move the game refuses is not expected here
+          makeMove(pos, out[i], player, undo);
+          const rebuilt = buildPosition(real.state);
+          assert(JSON.stringify([...pos.occupied]) === JSON.stringify([...rebuilt.occupied]), "same squares");
+          assert(pos.repeatCount[player] === rebuilt.repeatCount[player] && pos.lastWasChip[player] === rebuilt.lastWasChip[player]);
+          unmakeMove(pos, out[i], player, undo);
+        }
+      }
+    });
+
+    test("the search returns a legal move, and a deeper search keeps working", () => {
+      for (const state of samplePositions()) {
+        for (const depth of [1, 2, 3]) {
+          const result = searchPosition(state, { maxDepth: depth });
+          assert(result.depth === depth);
+          const legal = getLegalMoves(state).map((move) => JSON.stringify(move));
+          assert(legal.includes(JSON.stringify(result.scored[0].move)), "depth " + depth);
+        }
+      }
+    });
+
+    test("the search sees a win: the opponent's only piece may not move a third time in a row", () => {
+      const state = {
+        ...createInitialState({ level: 15 }), phase: "movement", currentPlayer: 1, chips: CHIPS_OUT_OF_THE_WAY,
+        pieces: [piece(0, 1, horizontalI(1, 0)), piece(1, 2, horizontalI(7, 5))],
+        repeat: { 1: { pieceId: null, count: 0 }, 2: { pieceId: 1, count: 2 } },
+      };
+      const result = searchPosition(state, { maxDepth: 3 });
+      assert(result.scored[0].score >= 10000, "score " + result.scored[0].score);
+      assert(result.depth === 1, "no need to look deeper once a win is found");
+    });
+
+    test("alpha-beta gives the same best score as looking at every move", () => {
+      // Plain minimax without pruning, using the same engine.
+      function plain(pos, depth, side, me, stacks) {
+        if (depth === 0) return staticScore(pos, me, side);
+        const moves = stacks[depth];
+        const count = generateMoves(pos, side, moves);
+        if (pos.stats[0] === 0) return side === me ? -(10000 + depth) : 10000 + depth;
+        const other = side === 1 ? 2 : 1, undo = new Int32Array(8);
+        let best = side === me ? -Infinity : Infinity;
+        for (let i = 0; i < count; i++) {
+          makeMove(pos, moves[i], side, undo);
+          const value = plain(pos, depth - 1, other, me, stacks);
+          unmakeMove(pos, moves[i], side, undo);
+          best = side === me ? Math.max(best, value) : Math.min(best, value);
+        }
+        return best;
+      }
+      for (const state of samplePositions().slice(0, 2)) {
+        const stacks = [0, 1, 2, 3].map(() => new Int32Array(2048));
+        const expected = plain(buildPosition(state), 2, state.currentPlayer, state.currentPlayer, stacks);
+        assert(searchPosition(state, { maxDepth: 2 }).scored[0].score === expected);
+      }
+    });
+
+    test("the search goes as deep as it is allowed when time is not a problem", () => {
+      const state = samplePositions()[0];
+      assert(searchPosition(state, { maxDepth: 3 }).depth === 3);
+      assert(searchPosition(state, { maxDepth: 4, minDepth: 2 }).depth === 4);
+    });
+
+    test("the search goes deeper than its minimum only while there is time", () => {
+      const state = samplePositions()[1];
+      const started = performance.now();
+      const result = searchPosition(state, { maxDepth: 14, minDepth: 2, budgetMs: 150 });
+      const took = performance.now() - started;
+      assert(result.depth >= 2 && result.depth < 14, "reached depth " + result.depth);
+      assert(took < 1500, "took " + Math.round(took) + " ms");
+      const quick = searchPosition(state, { maxDepth: 14, minDepth: 2, budgetMs: 2000 });
+      assert(quick.depth > result.depth || quick.depth >= 5, "more time, more depth: " + quick.depth + " vs " + result.depth);
+    });
+
+    test("the search stops when its time is up, but always finishes depth 1", () => {
+      const state = samplePositions()[0];
+      const result = searchPosition(state, { maxDepth: 6, budgetMs: 1 });
+      assert(result.depth >= 1 && result.scored.length >= 1);
+    });
+
+    test("near-best asks for several exact scores, best-only asks for one", () => {
+      const state = samplePositions()[0];
+      assert(searchPosition(state, { maxDepth: 2, topK: 4 }).scored.length >= 2);
+      const params = cpuParams(100);
+      const move = chooseDeep(state, params, makeRng(1), { budgetMs: 50 });
+      assert(getLegalMoves(state).some((legal) => JSON.stringify(legal) === JSON.stringify(move)));
+    });
+
+    test("a chip move is not allowed when a piece must move", () => {
+      const state = { ...samplePositions()[0], mustMovePiece: true };
+      const result = searchPosition(state, { maxDepth: 2, piecesOnly: true });
+      assert(result.scored.every(({ move }) => move.type !== "chip"));
+    });
+
+    test("deep CPU games run without a refused move and without fallbacks", () => {
+      const before = cpuStats.deepFallbacks;
+      const result = playCpuGame({ level: 80, seed: 5, maxSteps: 60, budgetMs: 20 });
+      assert(result.problems.length === 0, JSON.stringify(result.problems));
+      assert(cpuStats.deepFallbacks === before, "the deep search only plays moves the game accepts");
     });
 
     document.getElementById("summary").textContent =
