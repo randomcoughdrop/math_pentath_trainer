@@ -17,6 +17,7 @@
 // Everything that decides things is a plain function (easy to test). Only
 // setupInput touches the page.
 
+import { ROWS, COLS } from "./constants.js";
 import { SHAPE_NAMES, getShapeCells } from "./pieces.js";
 import { rotateAboutVertex, flipOverSide, normalize, slideCells } from "./transforms.js";
 import { analyzePlacement, isAllowed } from "./analyze.js";
@@ -516,5 +517,26 @@ export function setupInput({ board, trays, buttons, view, getState, onMove, onCh
     if (key === "r") rotate(!event.shiftKey); // Shift+R turns the other way
     else if (key === "f") flip();
     else if (key === "escape") cancel();
+    else if (key.startsWith("arrow") || key === "enter") keyboardPlacement(event, key);
   });
+
+  // Placing a piece without a mouse: the arrow keys move the ghost, Enter places it.
+  function keyboardPlacement(event, key) {
+    const state = getState();
+    if (!state || cpuToAct(state) || !isPlacingNow(state) || !view.held) return;
+    if (document.activeElement && document.activeElement.tagName === "BUTTON") return; // let Enter press the button
+    event.preventDefault();
+    if (key === "enter") {
+      tryPlace();
+      return;
+    }
+    const step = { arrowup: [-1, 0], arrowdown: [1, 0], arrowleft: [0, -1], arrowright: [0, 1] }[key];
+    const from = view.hover ?? { row: Math.floor(ROWS / 2), col: Math.floor(COLS / 2) };
+    view.hover = {
+      row: Math.min(ROWS - 1, Math.max(0, from.row + step[0])),
+      col: Math.min(COLS - 1, Math.max(0, from.col + step[1])),
+    };
+    view.notice = "";
+    onChange();
+  }
 }

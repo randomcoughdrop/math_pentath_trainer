@@ -34,6 +34,7 @@ const BLOCKED_LOOK = { fill: "#6b665a", edge: "#2d2a24" };
 //   corners          [[row, col], ...] grid corners to mark as places to pivot
 //   pivot            [row, col] the corner that has been chosen
 //   ghosts           [{ cells }] see-through pieces showing where a move would land
+//   animation        { ...animation (see animation.js), progress } a piece or chip caught mid-move
 export function render(canvas, state, extras = {}) {
   const layout = fitCanvas(canvas, COLS + 2 * BOARD_MARGIN, ROWS + 2 * BOARD_MARGIN);
   if (!layout) return; // the canvas is hidden or has no size yet
@@ -174,14 +175,16 @@ export function drawBoard(ctx, state, layout, extras = {}) {
   drawGridLines(ctx, layout, COLS, ROWS, 1);
   drawStars(ctx, layout);
   drawStartMarkers(ctx, layout, colors);
-  drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds);
+  drawPieces(ctx, state, layout, colors, extras.dimmedPieceIds, extras.animation);
+  drawMovingPiece(ctx, layout, colors, state, extras.animation);
   drawSelection(ctx, state, layout, extras);
   drawHighlight(ctx, layout, extras);
   for (const ghost of extras.ghosts ?? []) {
     drawGhost(ctx, state, layout, colors, { cells: ghost.cells, ok: true });
   }
   if (extras.preview) drawGhost(ctx, state, layout, colors, extras.preview);
-  drawChips(ctx, state, layout, colors);
+  drawChips(ctx, state, layout, colors, extras.animation);
+  drawMovingChip(ctx, layout, colors, state, extras.animation);
   drawHints(ctx, layout, extras);
   drawStreakBadges(ctx, state, layout);
 }
@@ -242,8 +245,9 @@ function drawStartMarkers(ctx, { cell }, colors) {
 }
 
 // Pieces placed on the board. Their cells are in board coordinates.
-function drawPieces(ctx, state, { cell }, colors, dimmed = []) {
+function drawPieces(ctx, state, { cell }, colors, dimmed = [], animation = null) {
   for (const piece of state.pieces) {
+    if (animation && animation.pieceId === piece.id) continue; // drawn by drawMovingPiece
     drawCells(ctx, piece.cells, 0, 0, cell, colors[piece.owner]);
     // Easy only: a piece with no legal move is slightly washed out.
     if (dimmed.includes(piece.id)) {
@@ -364,21 +368,70 @@ function drawStreakBadges(ctx, state, { cell }) {
   }
 }
 
-// Chips are plain solid discs in the owner's color.
-function drawChips(ctx, state, { cell }, colors) {
-  for (const chip of state.chips) {
-    const look = colors[chip.owner];
-    const centerX = (chip.col + 0.5) * cell;
-    const centerY = (chip.row + 0.5) * cell;
+// A piece in the middle of a move, drawn from where it started and carried
+// partway (animation.progress, 0 to 1) by a slide, a swing, or a flip.
+function drawMovingPiece(ctx, { cell }, colors, state, animation) {
+  if (!animation || animation.kind === "chip") return;
+  const piece = state.pieces.find((candidate) => candidate.id === animation.pieceId);
+  if (!piece) return;
+  const t = animation.progress;
 
-    ctx.fillStyle = look.fill;
-    ctx.strokeStyle = look.edge;
-    ctx.lineWidth = Math.max(1.5, cell * 0.05);
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, cell * 0.22, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+  ctx.save();
+  if (animation.kind === "slide") {
+    ctx.translate(animation.cols * t * cell, animation.rows * t * cell);
+  } else if (animation.kind === "rotate") {
+    const [pivotRow, pivotCol] = animation.pivot;
+    ctx.translate(pivotCol * cell, pivotRow * cell);
+    ctx.rotate(t * animation.quarterTurns * Math.PI / 2); // clockwise
+    ctx.translate(-pivotCol * cell, -pivotRow * cell);
+  } else {
+    // A flip squashes the piece flat against its edge and out the other side.
+    const squash = 1 - 2 * t;
+    const along = animation.axis * cell;
+    if (animation.side === "left" || animation.side === "right") {
+      ctx.translate(along, 0);
+      ctx.scale(squash, 1);
+      ctx.translate(-along, 0);
+    } else {
+      ctx.translate(0, along);
+      ctx.scale(1, squash);
+      ctx.translate(0, -along);
+    }
   }
+  // A soft shadow so the moving piece looks lifted.
+  ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+  ctx.shadowBlur = cell * 0.25;
+  drawCells(ctx, animation.cells, 0, 0, cell, colors[piece.owner]);
+  ctx.restore();
+}
+
+// A chip rolling from one square to another.
+function drawMovingChip(ctx, { cell }, colors, state, animation) {
+  if (!animation || animation.kind !== "chip") return;
+  const chip = state.chips.find((candidate) => candidate.id === animation.chipId);
+  if (!chip) return;
+  const t = animation.progress;
+  const row = animation.from.row + (animation.to.row - animation.from.row) * t;
+  const col = animation.from.col + (animation.to.col - animation.from.col) * t;
+  drawChipDisc(ctx, (col + 0.5) * cell, (row + 0.5) * cell, cell, colors[chip.owner]);
+}
+
+// Chips are plain solid discs in the owner's color.
+function drawChips(ctx, state, { cell }, colors, animation = null) {
+  for (const chip of state.chips) {
+    if (animation && animation.chipId === chip.id) continue; // drawn by drawMovingChip
+    drawChipDisc(ctx, (chip.col + 0.5) * cell, (chip.row + 0.5) * cell, cell, colors[chip.owner]);
+  }
+}
+
+function drawChipDisc(ctx, centerX, centerY, cell, look) {
+  ctx.fillStyle = look.fill;
+  ctx.strokeStyle = look.edge;
+  ctx.lineWidth = Math.max(1.5, cell * 0.05);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, cell * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
 }
 
 // Boot and hat are simple silhouettes drawn in a 1 x 1 box, then scaled to fit.
@@ -421,12 +474,44 @@ function drawIcon(ctx, kind, left, top, size, color) {
 
 // Draw one pentomino. Cell [row, col] is drawn at (left + col * unit, top + row * unit).
 // "look" supplies the fill and edge colors.
+function isPlayerTwoLook(look) {
+  return Object.values(COLOR_SCHEMES).some((scheme) => scheme[2] === look);
+}
+
+function hatch(ctx, cells, left, top, unit, color) {
+  for (const [row, col] of cells) {
+    const x = left + col * unit, y = top + row * unit;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, unit, unit);
+    ctx.clip();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = Math.max(1.5, unit * 0.06);
+    ctx.beginPath();
+    for (let k = -1; k <= 2; k++) {
+      ctx.moveTo(x + k * unit * 0.5, y + unit);
+      ctx.lineTo(x + k * unit * 0.5 + unit, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Player 2's pieces get diagonal hatching when patterns are on.
+let patternsOn = false;
+export function setPatterns(on) {
+  patternsOn = on;
+}
+
 function drawCells(ctx, cells, left, top, unit, look) {
   // Solid squares.
   ctx.fillStyle = look.fill;
   for (const [row, col] of cells) {
     ctx.fillRect(left + col * unit, top + row * unit, unit, unit);
   }
+
+  if (patternsOn && isPlayerTwoLook(look)) hatch(ctx, cells, left, top, unit, look.edge);
 
   // Faint lines between the squares of the piece, so you can count them.
   ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";

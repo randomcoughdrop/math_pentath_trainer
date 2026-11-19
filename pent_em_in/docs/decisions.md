@@ -217,3 +217,12 @@ Three incorrect challenges is an automatic loss.
 | Level 100 | At least 6, usually 7, at most 14, 5 seconds. |
 | Safety | The minimum depth may use up to 3 times the budget; after that the last finished depth is used. |
 | Simulations | `playCpuGame` and `tools/compare.mjs` default to a 200 ms budget so games finish quickly; this makes the simulated computers weaker than in the page. |
+
+## Phase 10 Implementation Decisions
+
+- **Undo is Easy only.** It is not in the official rules, so Medium and Hard never offer it. Against the computer it removes your move and the reply, so it is your turn again. It is unavailable once time is called or the game is over.
+- **Saves are replays, not snapshots.** A save is the list of events, so it stays small and can't hold an impossible position; a save that fails to replay is discarded.
+- **Resume comes back paused,** so the clocks don't run while you find your place. A finished game clears the save. Only one game is saved.
+- **Sound effects are on by default** (nothing plays until the first tap or key press, a browser rule). The turn-reminder beep keeps its own checkbox.
+- **Piece patterns are optional** and remembered; Player 2 is hatched.
+- **Animations are skipped** when the system asks for reduced motion.

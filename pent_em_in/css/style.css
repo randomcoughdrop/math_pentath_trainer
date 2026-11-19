@@ -308,3 +308,17 @@ canvas {
   display: block;
   margin-bottom: 0.25rem;
 }
+
+/* Keyboard users can see where they are. */
+button:focus-visible, input:focus-visible, select:focus-visible, canvas:focus-visible, summary:focus-visible {
+  outline: 3px solid #1f6feb;
+  outline-offset: 2px;
+}
+
+/* The How to play dialog */
+#howto { width: min(46rem, 94vw); max-height: 88vh; overflow-y: auto; border: 1px solid #999; border-radius: 6px; padding: 1rem 1.25rem; }
+#howto::backdrop { background: rgba(0, 0, 0, 0.45); }
+.howto-content h2 { font-size: 1.25rem; margin: 1.2rem 0 0.4rem; }
+.howto-content h3 { font-size: 1.05rem; margin: 1rem 0 0.3rem; }
+.howto-content table { border-collapse: collapse; margin: 0.5rem 0; }
+.howto-content th, .howto-content td { border: 1px solid #bbb; padding: 0.2rem 0.5rem; text-align: left; }

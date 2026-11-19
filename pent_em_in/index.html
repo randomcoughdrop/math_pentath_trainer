@@ -45,8 +45,16 @@
       </fieldset>
 
       <button type="submit" id="btn-start">Start game</button>
+      <button type="button" id="btn-resume-saved" hidden>Resume saved game</button>
+      <button type="button" class="open-howto">How to play</button>
     </form>
   </section>
+
+  <dialog id="howto" aria-labelledby="howto-title">
+    <h1 id="howto-title">How to play</h1>
+    <div id="howto-content" class="howto-content">Loading...</div>
+    <button type="button" id="howto-close">Close</button>
+  </dialog>
 
   <!-- The game -->
   <main id="game" hidden>
@@ -71,7 +79,11 @@
       <span id="clock-player-2" class="clock-player"></span>
       <span id="clock-turn"></span>
       <button type="button" id="btn-pause">Pause</button>
+      <button type="button" id="btn-undo" hidden>Undo</button>
+      <button type="button" class="open-howto">How to play</button>
       <label id="sound-option" class="sound-option"><input type="checkbox" id="sound-toggle"> Beep for the turn reminder</label>
+      <label class="sound-option"><input type="checkbox" id="effects-toggle" checked> Sound effects</label>
+      <label class="sound-option"><input type="checkbox" id="patterns-toggle"> Piece patterns</label>
     </div>
 
     <!-- Shown instead of the board while paused -->
@@ -122,7 +134,7 @@
 
       <div class="play-area">
         <div class="board-wrapper">
-          <canvas id="board" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
+          <canvas id="board" tabindex="0" width="1350" height="950" role="img" aria-label="Pent 'Em In game board"></canvas>
         </div>
 
         <aside class="log-panel">

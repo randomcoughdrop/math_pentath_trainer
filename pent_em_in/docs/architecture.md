@@ -32,6 +32,11 @@ How the code is organized. This file grows with each phase (see `../DEVELOPMENT_
 | `js/ui.js` | Status text, game-over text, clocks display, buttons, move log |
 | `js/menu.js` | The start screen |
 | `js/ai/engine.js`, `js/ai/worker.js` | Fast engine for the search; the Web Worker that runs the CPU |
+| `js/animation.js` | Move animations: descriptors, easing, progress (pure); the renderer draws the moving piece |
+| `js/save.js` | Save format, replay of recorded events, undo counting (pure) |
+| `js/storage.js` | Safe `localStorage` wrappers |
+| `js/sound.js` | Synthesized sound effects (Web Audio) |
+| `js/markdown.js`, `js/howto.js` | Tiny DOM-safe Markdown renderer and the How to play dialog |
 | `js/players.js` | Who is human or CPU, and who the game is waiting on |
 | `js/ai/` | The CPU (parameters, move choice, evaluation, search, worker) |
 
@@ -216,3 +221,10 @@ Flow: pointer or key event → `input.js` changes `view` (or asks `applyMove` to
 - `challengeWin` handles the once-only challenge of a forfeit or entrapment win.
 - `turn.js` holds the forfeit, entrapment, and stuck-player checks that run after any turn change.
 - UI: `challenge-ui.js` shows and hides the parts; `input.js` `placementOwner` says whose tray is active (the challenger while placing for the opponent) and `relocationClick` handles picking a chip then a square.
+
+## Phase 10: Polish
+
+- **Animations.** `playMove` builds an animation from the position before the move (`createAnimation`) and the main loop redraws with `requestAnimationFrame` until it finishes. The game state is already the final position; the renderer just draws the moving piece (or chip) with a canvas transform from where it started and skips it in the normal pass.
+- **Save, resume, undo.** `main.js` keeps `events` (every move, plus `@time` and `@flag`). A save is settings + first player + events + clock; `replayEvents` rebuilds the state. Undo replays all but the last events (`undoCount`).
+- **Patterns.** A renderer flag hatches Player 2's pieces.
+- **How to play.** `docs/rules.md` is fetched and rendered up to its first "Implementation notes" heading.

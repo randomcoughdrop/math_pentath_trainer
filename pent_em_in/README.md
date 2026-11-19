@@ -35,6 +35,27 @@ To choose things ahead of time, add options to the address: `?first=2` (who goes
 
 The ghost shows your color where the piece can go. It turns grey with a slash through each square where it can't (off the board, over a chip or piece, on a star, or touching an opponent's piece along an edge).
 
+Keyboard only: after picking a piece, the arrow keys move the ghost and `Enter` places it.
+
+## Extras
+
+- **Animations:** slides glide, rotations swing around the pivot, flips turn over their edge, chips roll. Skipped if your system asks for reduced motion.
+- **Undo (Easy only):** takes back your last move (against the computer, your move and its reply).
+- **Save and resume:** the game is saved in your browser after every move. The start screen offers "Resume saved game" (it comes back paused, clocks included).
+- **How to play:** a button on the start screen and in the game shows the rules from `docs/rules.md`.
+- **Piece patterns:** hatches Player 2's pieces so the players never depend on color alone.
+- **Sound effects:** short synthesized sounds, with a checkbox to mute (remembered).
+
+## Screenshots
+
+| Start screen | Placing a piece |
+|---|---|
+| ![Start screen](docs/images/menu.png) | ![Placement](docs/images/placement.png) |
+
+| On a phone | How to play |
+|---|---|
+| ![Phone layout](docs/images/phone.png) | ![How to play dialog](docs/images/how-to-play.png) |
+
 ## Controls (movement)
 
 Click one of your own pieces or chips to select it (a yellow outline appears). Squares and corners you can click are marked.
@@ -96,6 +117,7 @@ pent_em_in/
 ├── css/style.css           Page layout
 ├── js/                     Game code (logic, drawing, input, CPU)
 ├── tests/tests.html        Open in a browser to run the tests
+├── CHANGELOG.md            What changed in each phase
 └── docs/                   Rules, decisions, architecture, CPU notes
 ```
 

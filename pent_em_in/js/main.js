@@ -1,5 +1,6 @@
 // Entry point: wires everything together.
 
+import { bandForLevel } from "./constants.js";
 import { createInitialState } from "./state.js";
 import { applyMove, callTime, loseOnTime } from "./game.js";
 import { createClock, advanceClock, startTurn, setPaused } from "./clock.js";
@@ -9,6 +10,12 @@ import { playerLabel, statusMessage, updateControls, renderLog, renderClocks, ga
 import { setupMenu, selectChoice } from "./menu.js";
 import { setupChallengeUI, renderChallengeUI } from "./challenge-ui.js";
 import { cpuToAct, actorNow } from "./players.js";
+import { createAnimation, animationFrame, reducedMotion } from "./animation.js";
+import { createSound, soundForMove } from "./sound.js";
+import { loadSetting, saveSetting, removeSetting } from "./storage.js";
+import { replayEvents, buildSave, looksLikeSave, undoCount } from "./save.js";
+import { setupHowTo } from "./howto.js";
+import { setPatterns } from "./renderer.js";
 import { cpuParams } from "./ai/params.js";
 import { nextCpuMove } from "./ai/cpu.js";
 
@@ -27,6 +34,8 @@ const moveLog = $("move-log");
 const gameOverBox = $("gameover");
 const pauseBanner = $("pause-banner");
 const soundToggle = $("sound-toggle");
+const effectsToggle = $("effects-toggle");
+const patternsToggle = $("patterns-toggle");
 
 const buttons = {
   // placement
@@ -79,6 +88,8 @@ let settings = null; // what the menu chose, kept for "Play again"
 let cpu = null; // the computer's settings (from the level), see ai/params.js
 let cpuTimer = null;
 let cpuThinking = false; // the computer is working out a move
+let startingPlayer = 1; // who moved first (needed to rebuild the game)
+let events = []; // everything that has happened, so the game can be saved and replayed
 let cpuToken = 0; // changes when a game starts or ends, so old answers are ignored
 
 // Things that are not part of the game itself: the piece being held, where the
@@ -88,7 +99,7 @@ function resetView() {
   Object.assign(view, {
     held: null, hover: null, notice: "", announce: "",
     selected: null, action: "slide", pivot: null, turnPreview: null,
-    paused: false, challengeOpen: false, cpuHighlight: null,
+    paused: false, challengeOpen: false, cpuHighlight: null, animation: null,
   });
 }
 resetView();
@@ -106,7 +117,8 @@ selectChoice(menu, "difficulty", params.get("difficulty"));
 
 function startGame(chosen) {
   // The digital version of the Game Monitor's hidden-chip draw.
-  const startingPlayer = firstOverride ?? chosen.firstPlayer ?? (Math.random() < 0.5 ? 1 : 2);
+  startingPlayer = firstOverride ?? chosen.firstPlayer ?? (Math.random() < 0.5 ? 1 : 2);
+  events = [];
   firstOverride = null;
 
   if (levelOverride !== null) chosen = { ...chosen, level: Math.min(100, Math.max(0, levelOverride)) };
@@ -129,6 +141,7 @@ function startGame(chosen) {
   menu.hidden = true;
   gameScreen.hidden = false;
   lastTick = performance.now();
+  saveGame();
   draw();
 }
 
@@ -140,6 +153,7 @@ function showMenu() {
   cpuToken++;
   gameScreen.hidden = true;
   menu.hidden = false;
+  refreshResumeButton();
 }
 
 // --- drawing ---
@@ -154,13 +168,28 @@ function draw() {
   gameView.hidden = view.paused;
   pauseBanner.hidden = !view.paused;
 
+  // A move in progress: draw the piece partway along, and keep redrawing until it lands.
+  let animation = null;
+  if (view.animation) {
+    const frame = animationFrame(view.animation, performance.now());
+    if (frame.done) {
+      view.animation = null;
+    } else {
+      animation = { ...view.animation, progress: frame.progress };
+      requestAnimationFrame(draw);
+    }
+  }
+
   if (!view.paused) {
-    render(board, state, { preview, highlightCells: view.cpuHighlight, ...buildOverlay(state, view, legal) });
+    render(board, state, { preview, animation, highlightCells: animation ? null : view.cpuHighlight, ...buildOverlay(state, view, legal) });
     for (const player of [1, 2]) {
       // Only the player whose piece is being placed can hold one.
       renderTray(trays[player], state, player, placementOwner(state) === player ? view.held : null);
     }
   }
+
+  $("btn-undo").hidden = bandForLevel(settings.level) !== "easy"; // Easy only
+  $("btn-undo").disabled = state.phase === "gameover" || state.timeCalled || events.length === 0 || view.paused;
 
   status.textContent = statusMessage(state, view, preview, legal);
   updateControls(state, view, preview, legal, buttons, panels, trayBoxes);
@@ -191,14 +220,19 @@ function handleMove(move) {
 
 // Plays a move for whoever is acting (a person, or the computer below).
 function playMove(move) {
+  const before = state;
   const result = applyMove(state, move);
   if (result.ok) {
     state = result.state;
+    events.push(move);
+    sound.play(soundForMove(move));
+    view.animation = reducedMotion() ? null : createAnimation(before, move, performance.now());
     view.held = null;
     view.hover = null;
     clearSelection(view);
     view.challengeOpen = false;
     startTurn(clock); // the next player's turn timer starts at zero
+    saveGame();
   }
   return result;
 }
@@ -319,25 +353,102 @@ function tick() {
   lastTick = now;
   if (!state || state.phase === "gameover") return;
 
-  const events = advanceClock(clock, elapsed, state.currentPlayer, !cpuToAct(state));
+  const timeEvents = advanceClock(clock, elapsed, state.currentPlayer, !cpuToAct(state));
 
-  if (events.flagFall) {
-    state = loseOnTime(state, events.flagFall);
+  if (timeEvents.flagFall) {
+    state = loseOnTime(state, timeEvents.flagFall);
+    events.push({ type: "@flag", player: timeEvents.flagFall });
+    saveGame();
     view.held = null;
     view.hover = null;
     clearSelection(view);
     draw();
     return;
   }
-  if (events.capReached) {
+  if (timeEvents.capReached) {
     state = callTime(state);
+    events.push({ type: "@time" });
+    saveGame();
     draw();
   }
-  if (events.turnAlert && soundToggle.checked && !cpuToAct(state)) beep();
+  if (timeEvents.turnAlert && soundToggle.checked && !cpuToAct(state)) beep();
 
   renderClocks(clockParts, state, clock);
 }
 setInterval(tick, 250);
+
+// --- saving, resuming, undo ---
+
+function saveGame() {
+  if (!state) return;
+  if (state.phase === "gameover") removeSetting("game");
+  else saveSetting("game", buildSave(settings, startingPlayer, events, clock));
+}
+
+function refreshResumeButton() {
+  $("btn-resume-saved").hidden = !looksLikeSave(loadSetting("game", null));
+}
+
+function resumeGame() {
+  const save = loadSetting("game", null);
+  const rebuilt = looksLikeSave(save) ? replayEvents(save.settings, save.startingPlayer, save.events) : null;
+  if (!rebuilt) {
+    removeSetting("game"); // damaged or out of date
+    refreshResumeButton();
+    return;
+  }
+  settings = save.settings;
+  startingPlayer = save.startingPlayer;
+  events = save.events;
+  state = rebuilt;
+  clock = save.clock;
+  cpu = cpuParams(settings.level);
+  clearTimeout(cpuTimer);
+  cpuTimer = null;
+  cpuThinking = false;
+  cpuToken++;
+  resetView();
+  view.announce = "Game resumed. Press Resume to continue.";
+  view.paused = true; // so nobody loses time before they're ready
+  setPaused(clock, true);
+  for (const player of [1, 2]) $("tray-title-" + player).textContent = playerLabel(state, player);
+  renderLog(moveLog, state);
+  menu.hidden = true;
+  gameScreen.hidden = false;
+  lastTick = performance.now();
+  draw();
+}
+$("btn-resume-saved").addEventListener("click", resumeGame);
+refreshResumeButton();
+
+// Undo is a help for Easy games only. It replays the game without the last move
+// (against the computer: without your last move and its reply).
+function undo() {
+  if (!state || bandForLevel(settings.level) !== "easy" || state.phase === "gameover" || state.timeCalled || view.paused) return;
+  const drop = undoCount(settings, startingPlayer, events);
+  if (drop === 0) return;
+  const rebuilt = replayEvents(settings, startingPlayer, events.slice(0, events.length - drop));
+  if (!rebuilt) return;
+  events = events.slice(0, events.length - drop);
+  state = rebuilt;
+  clearTimeout(cpuTimer);
+  cpuTimer = null;
+  cpuThinking = false;
+  cpuToken++; // ignore anything the computer was working on
+  const keep = { paused: view.paused };
+  resetView();
+  Object.assign(view, keep);
+  sound.play("undo");
+  startTurn(clock);
+  saveGame();
+  draw();
+}
+$("btn-undo").addEventListener("click", undo);
+
+setupHowTo({
+  dialog: $("howto"), content: $("howto-content"), closeButton: $("howto-close"),
+  openButtons: document.querySelectorAll(".open-howto"),
+});
 
 function togglePause() {
   if (!state || state.phase === "gameover") return;
@@ -350,31 +461,27 @@ $("btn-resume").addEventListener("click", togglePause);
 
 // --- the turn reminder's beep ---
 
-let audio = null;
+const sound = createSound();
+const beep = () => sound.play("alert");
 
-// Browsers only allow sound after the person has interacted with the page, so
-// the sound system is started when they tick the box.
-soundToggle.addEventListener("change", () => {
-  if (!soundToggle.checked) return;
-  try {
-    audio = audio ?? new AudioContext();
-    audio.resume();
-  } catch (error) {
-    audio = null;
-  }
+// Browsers only allow sound after the person has touched the page.
+for (const kind of ["pointerdown", "keydown"]) document.addEventListener(kind, () => sound.unlock(), { once: true });
+
+effectsToggle.checked = loadSetting("effects", true);
+sound.setEnabled(effectsToggle.checked);
+effectsToggle.addEventListener("change", () => {
+  sound.setEnabled(effectsToggle.checked);
+  saveSetting("effects", effectsToggle.checked);
 });
 
-function beep() {
-  if (!audio) return;
-  const oscillator = audio.createOscillator();
-  const volume = audio.createGain();
-  oscillator.frequency.value = 880;
-  volume.gain.value = 0.1;
-  oscillator.connect(volume);
-  volume.connect(audio.destination);
-  oscillator.start();
-  oscillator.stop(audio.currentTime + 0.25);
-}
+// Piece patterns: player 2's pieces are hatched, so the players never depend on color alone.
+patternsToggle.checked = loadSetting("patterns", false);
+setPatterns(patternsToggle.checked);
+patternsToggle.addEventListener("change", () => {
+  setPatterns(patternsToggle.checked);
+  saveSetting("patterns", patternsToggle.checked);
+  draw();
+});
 
 // --- redraw when a canvas changes size ---
 

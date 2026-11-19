@@ -445,7 +445,7 @@ Pivots live on grid **vertices** (between cells), not on cells, so the rotation 
 
 ---
 
-### Phase 10: Polish and Quality of Life
+### Phase 10: Polish and Quality of Life ✅ Done
 **Goal:** Make it pleasant to use.
 
 - Animations for slides, rotations (swinging around the pivot), and flips (short, simple tweens).

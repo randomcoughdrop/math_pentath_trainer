@@ -27,6 +27,8 @@
     } from "../js/moves.js";
     import { snapshotOf, restoreSnapshot } from "../js/history.js";
     import { applyMove, callTime, loseOnTime } from "../js/game.js";
+    import { createAnimation, animationFrame, ease, durationFor } from "../js/animation.js";
+    import { replayEvents, buildSave, looksLikeSave, undoCount } from "../js/save.js";
     import { createClock, advanceClock, startTurn, setPaused, formatTime } from "../js/clock.js";
     import { settingsFromChoices } from "../js/menu.js";
     import {
@@ -1737,6 +1739,44 @@
       const result = playCpuGame({ level: 80, seed: 5, maxSteps: 60, budgetMs: 20 });
       assert(result.problems.length === 0, JSON.stringify(result.problems));
       assert(cpuStats.deepFallbacks === before, "the deep search only plays moves the game accepts");
+    });
+
+    test("animations: easing, frames, and descriptors", () => {
+      assert(ease(0) === 0 && ease(1) === 1 && ease(0.5) === 0.5);
+      const a = { startTime: 100, duration: 200 };
+      assert(animationFrame(a, 100).progress === 0 && !animationFrame(a, 100).done);
+      assert(animationFrame(a, 300).done && animationFrame(a, 300).progress === 1);
+      const s = createInitialState({});
+      s.pieces = [{ id: "A", owner: 1, cells: [[0, 0], [0, 1]] }];
+      const slide = createAnimation(s, { type: "slide", pieceId: "A", direction: "down", distance: 2 }, 0);
+      assert(slide.rows === 2 && slide.cols === 0 && slide.duration > 0);
+      const flip = createAnimation(s, { type: "flip", pieceId: "A", side: "right" }, 0);
+      assert(flip.axis === 2);
+      const rot = createAnimation(s, { type: "rotate", pieceId: "A", pivot: [0, 0], quarterTurns: 1 }, 0);
+      assert(rot.quarterTurns === 1 && durationFor({ type: "rotate", quarterTurns: 2 }) > rot.duration);
+      assert(createAnimation(s, { type: "place", cells: [] }, 0) === null);
+      assert(createAnimation(s, { type: "slide", pieceId: "nope", direction: "up", distance: 1 }, 0) === null);
+    });
+
+    test("saves replay to the same game, and undo counts events back", () => {
+      const twoPlayer = settingsFromChoices("easy", "red-blue", "2");
+      let game = createInitialState({ ...twoPlayer, startingPlayer: 1 });
+      const log = [];
+      for (let i = 0; i < 4; i++) {
+        const found = getLegalPlacements(game, game.currentPlayer)[0];
+        const move = { type: "place", shape: found.shape, cells: found.cells };
+        const result = applyMove(game, move);
+        assert(result.ok, result.message);
+        game = result.state;
+        log.push(move);
+      }
+      const rebuilt = replayEvents(twoPlayer, 1, log);
+      assert(JSON.stringify(rebuilt.pieces) === JSON.stringify(game.pieces));
+      assert(replayEvents(twoPlayer, 1, [{ type: "place", shape: "I", cells: [[0, 0]] }]) === null, "bad saves are rejected");
+      assert(looksLikeSave(buildSave(twoPlayer, 1, log, createClock(15))));
+      assert(!looksLikeSave({ version: 99 }));
+      assert(undoCount(twoPlayer, 1, log) === 1);
+      assert(undoCount(twoPlayer, 1, []) === 0);
     });
 
     document.getElementById("summary").textContent =
